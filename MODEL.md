@@ -50,11 +50,12 @@ completely. An observer experiences totality only while the observing site lies 
 moving umbra. The three views below show how that physical statement becomes a planar
 distance calculation.
 
-```{=html}
 <figure class="model-diagram">
-<img class="diagram-light" src="web_viz/diagrams/besselian.light.svg"
+<picture>
+<source media="(prefers-color-scheme: dark)" srcset="web_viz/diagrams/besselian.dark.svg">
+<img src="web_viz/diagrams/besselian.light.svg"
      alt="Physical eclipse geometry and its side-on and face-on Besselian reference-plane views">
-<img class="diagram-dark" src="web_viz/diagrams/besselian.dark.svg" aria-hidden="true" alt="">
+</picture>
 <figcaption><strong>A.</strong> The physical event is the Moon intercepting sunlight and its
 shadow reaching an observing site on Earth. <strong>B.</strong> Seen from the side, the Moon
 casts a broad penumbra and a narrower umbra; their boundary slopes are tan
@@ -65,20 +66,19 @@ Moon discs: overlap corresponds to the penumbra, while complete coverage corresp
 umbra. The calculation compares the projected site with those two shadow radii. Not to
 scale.</figcaption>
 </figure>
-```
 
-```{=html}
 <figure class="model-diagram calculation-strip">
-<img class="diagram-light" src="web_viz/diagrams/besselian_calc.light.svg"
+<picture>
+<source media="(prefers-color-scheme: dark)" srcset="web_viz/diagrams/besselian_calc.dark.svg">
+<img src="web_viz/diagrams/besselian_calc.light.svg"
      alt="NASA Besselian coefficients and an observing location converging on the local contact calculation">
-<img class="diagram-dark" src="web_viz/diagrams/besselian_calc.dark.svg" aria-hidden="true" alt="">
+</picture>
 <figcaption>NASA/Espenak publishes the eclipse-wide polynomial coefficients. The build
 evaluates them at a candidate time, projects one observing site into the resulting shadow
 frame, and compares the site with the local penumbral and umbral radii. Repeating the
 comparison while solving for equality yields the four contact times; NASA does not provide
 the per-pixel contacts or terrain visibility used by this map.</figcaption>
 </figure>
-```
 
 A Besselian eclipse model replaces the full moving Sun--Moon--Earth geometry with a local
 coordinate frame attached to the lunar shadow: a plane through Earth's centre, perpendicular
@@ -136,16 +136,16 @@ $$
 \right]
 $$
 
-```{=html}
 <figure class="model-diagram">
-<img class="diagram-light" src="web_viz/diagrams/terrain.light.svg"
+<picture>
+<source media="(prefers-color-scheme: dark)" srcset="web_viz/diagrams/terrain.dark.svg">
+<img src="web_viz/diagrams/terrain.light.svg"
      alt="Vertical observer section showing terrain horizon, solar altitude, and Sun and Moon motion">
-<img class="diagram-dark" src="web_viz/diagrams/terrain.dark.svg" aria-hidden="true" alt="">
+</picture>
 <figcaption>The terrain ray and solar line of sight share the observer origin. The diagram
 separates terrain-horizon angle, solar altitude, the setting motion of the Sun, and the
 Moon's motion relative to the solar disc. Angular sizes and slopes are schematic.</figcaption>
 </figure>
-```
 
 The sample $s_*$ that produces the maximum in this expression is the **limiting terrain**;
 the GUI reports its horizontal distance as **distance to limiting terrain**. It can be a
@@ -172,7 +172,7 @@ of C2 and C3 and treats solar altitude as linear during the roughly one-to-two-m
 interval. On the contact grid in the live analysis kernel, the reconstruction differs from
 direct contact altitudes by at most 0.00078 degrees, with an RMS error of 0.00040 degrees;
 the stored altitude-drop quantum is 0.001 degrees. For required clearance $c$, the visible
-fraction is $f_{vis}=\operatorname{clip}_{[0,1]}[(\widehat{\alpha}_{C2}-\theta_h-c)/
+fraction is $f_{vis}=\text{clip}_{[0,1]}[(\widehat{\alpha}_{C2}-\theta_h-c)/
 \delta\alpha]$. Its default $c=0.27$ degrees is approximately one solar radius, so it asks
 for the whole disc rather than only its centre to clear the terrain skyline. Raising $c$
 adds undifferentiated tolerance for DEM error, vegetation, structures, haze, and uncertain
@@ -201,7 +201,7 @@ The model uses the Kasten--Young expression
 $X(\alpha)=[\sin\alpha+0.50572(\alpha+6.07995)^{-1.6364}]^{-1}$, with $\alpha$ in degrees.
 The **atmospheric transmission** factor is $\exp(-\tau X)$: it is a dimensionless multiplier,
 not a weather forecast or a measurement of eclipse-day haze. The margin term is
-$Q_m=\operatorname{clip}_{[0,1]}[(\alpha_m-\theta_h)/\sigma]$.
+$Q_m=\text{clip}_{[0,1]}[(\alpha_m-\theta_h)/\sigma]$.
 
 The default parameters are:
 
@@ -258,15 +258,15 @@ evaluation. Python resolves the eclipse circumstances and terrain horizon, inter
 masks those fields, and writes quantised rasters. The browser decodes the rasters and
 evaluates EVI when the display parameters change.
 
-```{=html}
 <figure class="model-diagram">
-<img class="diagram-light" src="web_viz/diagrams/flow.light.svg"
+<picture>
+<source media="(prefers-color-scheme: dark)" srcset="web_viz/diagrams/flow.dark.svg">
+<img src="web_viz/diagrams/flow.light.svg"
      alt="Data flow from Besselian elements and elevation data to the five-band COG">
-<img class="diagram-dark" src="web_viz/diagrams/flow.dark.svg" aria-hidden="true" alt="">
+</picture>
 <figcaption>Eclipse circumstances and terrain horizons are resolved during the static build;
 the browser receives their component fields and evaluates EVI.</figcaption>
 </figure>
-```
 
 ### 5. Eclipse circumstances
 

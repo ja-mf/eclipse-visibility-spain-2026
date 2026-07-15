@@ -1,5 +1,9 @@
 # Eclipse terrain visibility model: 12 Aug 2026, Spain
 
+Live map: **[eclipse.chungo.es](https://eclipse.chungo.es)**
+
+![Eclipse Visibility Index map, Spain and the Balearics, with marker popups showing sky diagrams and terrain clearance](screenshot.jpg)
+
 This model was designed and iterated via manual gathering of resources and thinking electric
 meat, so-called human brain, currently typing this message ([JAMF](https://ja-mf.github.io)),
 but the implementation was done almost entirely by LLM. The main motivation is, basically,
@@ -22,8 +26,11 @@ casting against a DEM, and the EVI (effective visibility index) combining terrai
 duration, airmass extinction, and margin above the horizon. Figures are in `web_viz/diagrams/`
 (TikZ sources, plus rendered SVGs for both light/dark palettes).
 
-This repo has the modeling and export pipeline only — not the web viewer or deployment
-tooling, and not the multi-GB DEM/output rasters those scripts consume and produce.
+`web_viz/index.html` is the deployed viewer: a single self-contained page (MapLibre GL JS +
+`@geomatico/maplibre-cog-protocol` from a CDN, no bundler) that reads the exported COGs
+through HTTP range requests and evaluates EVI client-side. This repo has that plus the
+modeling and export pipeline; it does not have the deployment tooling or the multi-GB
+DEM/output rasters those scripts consume and produce — those live at the live map above.
 
 ## Pipeline
 

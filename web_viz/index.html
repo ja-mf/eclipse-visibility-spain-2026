@@ -1,0 +1,1764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eclipse 2026-08-12 — visibility</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/@geomatico/maplibre-cog-protocol@0.5/dist/index.js"></script>
+<style>
+  :root { --bg:#12141a; --panel:#1b1e26; --line:#2c313d; --tx:#e7e9ee; --dim:#9aa2b1; --acc:#ffd23f; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--tx);
+               font:16.5px/1.45 ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  #map { position:absolute; inset:0; }
+  #panel { position:absolute; top:12px; left:12px; width:min(360px, calc(100vw - 24px));
+           max-height:calc(100% - 24px);
+           overflow-y:auto; background:rgba(27,30,38,.94); border:1px solid var(--line);
+           border-radius:10px; padding:14px; backdrop-filter:blur(8px); z-index:2; }
+  h1 { font-size:18px; margin:0 0 2px; }
+  .sub { color:var(--dim); font-size:14px; margin-bottom:12px; }
+  h2 { font-size:14px; text-transform:uppercase; letter-spacing:.8px; color:var(--dim);
+       margin:14px 0 7px; border-top:1px solid var(--line); padding-top:10px; }
+  h2:first-of-type { border-top:0; padding-top:0; }
+  label { display:flex; align-items:center; gap:7px; margin:6px 0; cursor:pointer; font-size:15px; }
+  select, button { width:100%; background:#232733; color:var(--tx); border:1px solid var(--line);
+                   border-radius:6px; padding:6px 8px; font:inherit; }
+  button { cursor:pointer; margin-top:8px; } button:hover { background:#2b303d; }
+  button.on { background:var(--acc); color:#000; border-color:var(--acc); font-weight:600; }
+  .row { display:flex; justify-content:space-between; font-size:14px; color:var(--dim); margin-top:9px; }
+  .row b { color:var(--tx); font-variant-numeric:tabular-nums; }
+  .note { font-size:13px; color:var(--dim); margin-top:3px; font-style:italic; }
+  input[type=range] { width:100%; accent-color:var(--acc); margin:2px 0 0; }
+  #hist { display:block; width:100%; height:34px; margin-top:8px; }
+  #legend { display:flex; height:9px; border-radius:3px; overflow:hidden; }
+  #legend i { flex:1; }
+  .lgnd { display:flex; justify-content:space-between; font-size:13px; color:var(--dim);
+          font-variant-numeric:tabular-nums; margin-top:3px; }
+  .desc { font-size:13.5px; color:var(--dim); margin-top:5px; min-height:34px; }
+  .swatch { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px;
+            border:1px solid #0008; vertical-align:-1px; }
+  #cmp { font-size:14px; color:var(--dim); margin-top:6px; line-height:1.5; }
+  #cmp b { color:var(--acc); }
+  .maplibregl-popup-content { background:rgba(20,22,29,.90); color:var(--tx);
+      border:1px solid var(--line); border-radius:9px; padding:10px 12px;
+      font:15px/1.5 ui-monospace, monospace; width:320px; max-height:76vh; overflow-y:auto;
+      backdrop-filter:blur(9px); box-shadow:0 8px 30px #0007; }
+  .orbital-popup.orbit-horizontal .maplibregl-popup-content {
+      width:min(560px, calc(100vw - 28px)); }
+  .orbital-popup { z-index:2; }
+  .orbital-popup .maplibregl-popup-tip { display:none; }
+  .popup-leader { position:absolute; left:0; top:0; height:1px; background:#d6bd68;
+      transform-origin:0 50%; pointer-events:none; z-index:1; opacity:.82;
+      box-shadow:0 0 0 1px #1118; }
+  .popup-leader::before { content:attr(data-n); position:absolute; left:-13px; top:-13px;
+      width:27px; height:27px; display:grid; place-items:center; border-radius:50%;
+      background:#d6bd68; color:#111318; font:700 14px/1 ui-sans-serif,system-ui,sans-serif;
+      box-shadow:0 0 0 3px #111d; }
+  .maplibregl-popup-tip { border-top-color:rgba(20,22,29,.86) !important;
+      border-bottom-color:rgba(20,22,29,.86) !important; }
+  .maplibregl-popup-close-button { color:var(--dim); font-size:22px; width:28px; }
+  /* three levels of detail. data-min marks the lowest level at which a row appears; the
+     ⋯ button cycles 1 (cartoon) -> 2 (key numbers) -> 3 (everything). */
+  .pop[data-lvl="1"] [data-min="2"], .pop[data-lvl="1"] [data-min="3"],
+  .pop[data-lvl="2"] [data-min="3"] { display:none; }
+  /* Two flex columns (coords+cartoon on the left, primary numbers on the right), each
+     sized to its own content -- a CSS grid here left dead space whenever one column's
+     rows were shorter than the other's combined height. */
+  .orbit-horizontal .pop { display:flex; flex-direction:column; }
+  .orbit-horizontal .pop > .pop-row { display:flex; gap:16px; align-items:flex-start; }
+  .orbit-horizontal .pop > .pop-row > .pop-coords { flex:1 1 0; min-width:0; }
+  .orbit-horizontal .pop > .pop-row > .pop-primary { flex:1 1 0; min-width:0; }
+  .orbit-horizontal .pop > .pop-detail { columns:2; column-gap:18px;
+      border-top:1px solid var(--line); margin-top:8px; padding-top:7px; }
+  .orbit-horizontal .pop > .pop-detail > div { break-inside:avoid; }
+  .orbit-horizontal .pop .rel { break-inside:avoid; margin-left:0; margin-right:0; padding:7px; }
+  .lvlbtn { float:right; cursor:pointer; color:var(--dim); border:1px solid var(--line);
+            border-radius:5px; font-size:14px; line-height:1; padding:3px 7px; letter-spacing:1px;
+            margin:-2px -2px 0 6px; user-select:none; }
+  .lvlbtn:hover { color:var(--acc); border-color:var(--acc); }
+  .pk { color:var(--dim); } .pv { color:var(--tx); font-weight:600; float:right; }
+  .verdict { margin:-2px -13px 8px; padding:6px 13px; font-weight:700; }
+  .ok { background:#1d4b2a; color:#8ff0a4; } .bad { background:#5a1d1d; color:#ffa3a3; }
+  .marg { background:#5e4a12; color:#ffd98a; }
+  svg.sky { display:block; border-radius:4px; margin-top:4px; max-width:100%; height:auto; }
+  .skymini { cursor:pointer; }
+  .skymini svg { width:100%; }
+  #skybox { display:none; position:absolute; inset:0; z-index:20; background:rgba(8,9,13,.72);
+            align-items:center; justify-content:center; padding:20px; backdrop-filter:blur(2px); }
+  .skycard { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+             padding:14px 16px; max-width:520px; max-height:calc(100% - 40px); overflow-y:auto; }
+  .sh { font-size:15.5px; color:var(--tx); margin-bottom:8px; font-weight:600; }
+  .sh .sx { float:right; color:var(--dim); cursor:pointer; padding:0 4px; }
+  .sh .sx:hover { color:var(--acc); }
+  .scl { font-size:13.5px; text-transform:uppercase; letter-spacing:.6px; color:var(--dim); margin:10px 0 3px; }
+  .scap { font-size:14px; color:var(--dim); margin-top:9px; line-height:1.5; }
+  .rel { margin:7px -13px -2px; padding:7px 13px; background:#20242e; border-top:1px solid var(--line); }
+  .up { color:#8ff0a4; } .dn { color:#ffa3a3; }
+  .btns { display:flex; gap:6px; margin-top:9px; }
+  .btns a, .btns button { flex:1; text-align:center; text-decoration:none; background:#232733;
+    color:var(--tx); border:1px solid var(--line); border-radius:6px; padding:6px; font-size:14px;
+    margin:0; cursor:pointer; }
+  .btns a:hover, .btns button:hover { background:#2b303d; }
+  .btns .go { background:#2f3a2c; border-color:#4a6b3f; }
+  .btns .go:hover { background:#3b4a37; }
+  /* marker list */
+  .mk { display:flex; align-items:center; gap:7px; font-size:14px; padding:6px 0;
+        border-top:1px solid var(--line); font-variant-numeric:tabular-nums; }
+  .mk:first-child { border-top:0; }
+  .mk .n { width:20px; color:var(--dim); text-align:right; }
+  .mk .c { flex:1; cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mk .c:hover { color:var(--acc); }
+  .mk .e { color:var(--dim); }
+  .mk button { width:28px; flex:none; margin:0; padding:2px 0; font-size:14px; line-height:1.3; }
+  .mk button.ref { color:#565c6a; }
+  .mk button.ref.on { color:var(--acc); border-color:var(--acc); }
+  .mk button.ref:hover { color:var(--acc); }
+  .mk.isref .c, .mk.isref .n { color:var(--acc); font-weight:600; }
+  .refline { display:flex; align-items:center; justify-content:space-between; gap:6px;
+             margin-top:7px; font-size:14px; color:var(--acc); }
+  .relbtn { width:auto; margin:0; padding:3px 10px; font-size:13.5px; flex:none; }
+  .relbtn.on { background:var(--acc); color:#000; border-color:var(--acc); font-weight:600; }
+  .pdrag { cursor:grab; touch-action:none; } .pdrag:active { cursor:grabbing; }
+  .pdrag[data-n]::before { content:'#' attr(data-n); display:inline-grid; place-items:center;
+      min-width:25px; height:20px; margin-right:7px; padding:0 4px; border-radius:10px;
+      background:#d6bd68; color:#111318; font:700 12px/1 ui-sans-serif,system-ui,sans-serif;
+      vertical-align:1px; }
+  .empty { font-size:14px; color:var(--dim); font-style:italic; }
+  #search { margin-bottom:12px; }
+  .qbar { display:flex; gap:6px; }
+  #q { flex:1; min-width:0; background:#232733; color:var(--tx);
+       border:1px solid var(--line); border-radius:8px; padding:7px 9px; font:inherit; }
+  #q:focus { outline:none; border-color:var(--acc); }
+  #qgo { width:58px; flex:none; margin:0; border-radius:8px; }
+  #qres { margin-top:6px; background:#20242e; border:1px solid var(--line);
+          border-radius:8px; overflow:hidden; display:none; }
+  #qres div { padding:7px 10px; border-top:1px solid var(--line); cursor:pointer; }
+  #qres div:first-child { border-top:0; }
+  #qres div:hover { background:#2b303d; }
+  #qres .t { font-size:15px; }
+  #qres .s { font-size:13.5px; color:var(--dim); }
+  #qres .msg, #qres .msg:hover { color:var(--dim); cursor:default; background:transparent;
+                                 font-size:14.5px; font-style:italic; }
+  #marks { margin-top:8px; border-top:1px solid var(--line); padding-top:8px;
+           max-height:min(34vh, 300px); overflow-y:auto; }
+  .mh { display:flex; align-items:center; justify-content:space-between; font-size:14px;
+        text-transform:uppercase; letter-spacing:.8px; color:var(--dim); margin-bottom:5px; }
+  .mact { display:flex; gap:5px; text-transform:none; letter-spacing:0; }
+  .mact button { width:auto; margin:0; padding:3px 8px; font-size:13.5px; }
+  .ttl { margin:-2px -13px 7px; padding:6px 13px; background:#20242e; font-weight:600;
+         border-bottom:1px solid var(--line); font-family:ui-sans-serif, system-ui, sans-serif; }
+  #busy { position:absolute; top:12px; right:56px; z-index:3; background:var(--acc); color:#000;
+          border-radius:5px; padding:4px 10px; font-size:13px; font-weight:700; display:none; }
+  #err { display:none; position:absolute; top:0; left:0; right:0; z-index:9; background:#7a1414;
+         color:#ffdede; padding:8px 14px; font:15px ui-monospace, monospace; }
+
+  /* Inline sun-direction compass, in the header sentence: a small always-visible glyph
+     (visible even with the panel collapsed) rather than a separate floating badge. */
+  #suncompass-svg { display:inline-block; width:17px; height:17px; vertical-align:-4px;
+                margin:0 1px; }
+
+  /* Shared tooltip supports pointer hover and touch. */
+  [data-tip] { cursor:help; }
+  .q { display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px;
+       border:1px solid var(--line); border-radius:50%; font-size:12px; color:var(--dim);
+       margin-left:5px; flex:none; cursor:help; user-select:none; }
+  .q:hover { color:var(--acc); border-color:var(--acc); }
+  #tip { position:absolute; z-index:10; max-width:370px; display:none; background:#0f1116;
+         border:1px solid var(--acc); border-radius:8px; padding:10px 12px; font-size:14.5px;
+         line-height:1.5; color:var(--tx); box-shadow:0 6px 22px #000a; pointer-events:none; }
+  #tip b { color:var(--acc); }
+  #tip code { font:14px ui-monospace, monospace; color:#9fdcff; }
+  #tip .more { color:var(--dim); font-style:italic; display:block; margin-top:5px; }
+  .doclink { display:block; margin-top:10px; text-align:center; font-size:14px; color:var(--acc);
+             text-decoration:none; border:1px dashed #4a4327; border-radius:6px; padding:5px; }
+  .doclink:hover { background:#241f0e; }
+
+  /* Always visible even with the panel collapsed -- lives in #head, not #body. */
+  .aboutlink { display:inline-block; font-size:12px; color:var(--dim); cursor:pointer;
+               text-decoration:underline dotted; margin:0 0 3px; }
+  .aboutlink:hover { color:var(--acc); }
+
+  /* Right-click menu on a marker pin: copy coords, set/clear reference, delete. */
+  #mkmenu { position:absolute; z-index:11; display:none; min-width:172px; background:#181b22;
+            border:1px solid var(--line); border-radius:8px; padding:4px;
+            box-shadow:0 8px 26px #000a; font-size:14.5px; }
+  #mkmenu button { display:block; width:100%; text-align:left; background:transparent;
+            border:0; border-radius:5px; padding:7px 10px; margin:0; color:var(--tx);
+            cursor:pointer; }
+  #mkmenu button:hover { background:#252a35; }
+  #mkmenu button.danger:hover { background:#4a1f24; color:#ffa3a3; }
+  #mkmenu hr { border:0; border-top:1px solid var(--line); margin:4px 2px; }
+
+  /* Collapsed panel preserves map area and its restore control. */
+  #fold { position:absolute; top:0; right:0; width:34px; height:34px; margin:0; padding:0;
+          display:grid; place-items:center; font-size:22px; line-height:1; color:var(--tx);
+          background:#282d38; border:1px solid #596171; border-radius:7px;
+          box-shadow:0 2px 8px #0006; }
+  #fold:hover, #fold:focus-visible { color:#17191d; background:var(--acc);
+          border-color:var(--acc); outline:none; }
+  #panel { transition:max-height .18s ease; }
+  #panel.folded { overflow:hidden; }
+  #panel.folded #body { display:none; }
+  #panel.folded .sub { margin-bottom:0; }
+  #head { position:relative; padding-right:40px; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="busy">rendering…</div>
+<div id="err"></div>
+<script>
+// Surface startup and runtime failures in the UI.
+window.addEventListener('error', e => {
+  const d = document.getElementById('err');
+  d.style.display = 'block';
+  d.textContent = 'JS error: ' + (e.message || e) + (e.filename ? ` (line ${e.lineno})` : '');
+});
+window.addEventListener('unhandledrejection', e => {
+  const d = document.getElementById('err');
+  d.style.display = 'block';
+  d.textContent = 'Unhandled promise rejection: ' + (e.reason && e.reason.message || e.reason);
+});
+</script>
+<div id="tip"></div>
+<div id="skybox" onclick="this.style.display='none'"></div>
+<div id="mkmenu"></div>
+
+<div id="panel">
+  <div id="head">
+    <h1>12 Aug 2026 total eclipse</h1>
+    <a class="aboutlink" onclick="openAbout()">Author · Code · About</a>
+    <div class="sub">At totality the Sun is 3.2–6.7° high, near azimuth 285° (WNW)
+      <svg id="suncompass-svg" viewBox="0 0 42 42" title="Sun direction at maximum eclipse (map centre)">
+        <circle cx="21" cy="21" r="19.5" fill="none" stroke="#3a3f4b" stroke-width="1"/>
+        <g id="suncompass">
+          <text x="21" y="8.5"  fill="#6b7280" font-size="7" font-weight="700" text-anchor="middle">N</text>
+          <text x="35" y="23.7" fill="#565c6a" font-size="6" text-anchor="middle">E</text>
+          <text x="21" y="38.5" fill="#565c6a" font-size="6" text-anchor="middle">S</text>
+          <text x="7"  y="23.7" fill="#565c6a" font-size="6" text-anchor="middle">W</text>
+          <g id="sunneedle">
+            <line x1="21" y1="21" x2="21" y2="9" stroke="#ffd23f" stroke-width="2" stroke-linecap="round"/>
+          </g>
+          <circle cx="21" cy="21" r="3.4" fill="#ffd23f" stroke="#12141a" stroke-width="1"/>
+        </g>
+      </svg>.
+      This map estimates terrain clearance.</div>
+    <button id="fold" title="Collapse controls" aria-label="Collapse controls"
+            aria-expanded="true">−</button>
+  </div>
+  <div id="body">
+  <div id="search">
+    <div class="qbar">
+      <input id="q" type="text" autocomplete="off" spellcheck="false"
+             placeholder="Place or coordinates">
+      <button id="qgo">Find</button>
+    </div>
+    <div id="qres"></div>
+    <div id="marks">
+      <div class="mh">
+        <span>Markers <span class="q" data-tip="marks">?</span></span>
+        <span class="mact">
+          <button id="mkshare">Copy link</button>
+          <button id="mkload">Import</button>
+        </span>
+      </div>
+      <div id="mks"></div>
+      <div id="cmp"></div>
+    </div>
+  </div>
+
+  <a class="doclink" href="model.html" target="_blank" rel="noopener">Model and data pipeline ↗</a>
+
+  <h2>Map field <span class="q" data-tip="layer">?</span></h2>
+  <select id="layer">
+    <option value="evi">Eclipse Visibility Index</option>
+    <option value="clear">Terrain clearance — Sun minus horizon</option>
+    <option value="fvis">Visible fraction of totality</option>
+    <option value="horizon">Terrain-horizon angle</option>
+    <option value="dur">Duration of totality</option>
+    <option value="alt">Sun altitude</option>
+    <option value="occ">Distance to limiting terrain</option>
+    <option value="rel">Relative to reference marker</option>
+  </select>
+  <canvas id="hist" width="272" height="34"></canvas>
+  <div id="legend"></div>
+  <div class="lgnd"><span id="lmin"></span><span id="lmax"></span></div>
+  <div class="desc" id="desc"></div>
+  <div style="font-size:13.5px;color:var(--dim);margin-top:6px">
+    <span class="q" data-tip="blocked" style="border:0;width:auto;margin:0">
+      <span class="swatch" style="background:#46202a"></span>blocked by terrain</span>
+    <span class="q" data-tip="nopath" style="border:0;width:auto;margin-left:8px">
+      <span class="swatch" style="background:#1c1e26"></span>outside totality</span>
+  </div>
+
+  <h2>Colour scale <span class="q" data-tip="palette">?</span></h2>
+  <select id="cmap">
+    <option value="auto">Automatic for selected field</option>
+    <optgroup label="Sequential">
+      <option value="magma">Magma</option>
+      <option value="inferno">Inferno</option>
+      <option value="viridis">Viridis</option>
+      <option value="plasma">Plasma</option>
+      <option value="cividis">Cividis (colour-blind safe)</option>
+      <option value="turbo">Turbo (high contrast)</option>
+      <option value="blues">Blues</option>
+      <option value="orrd">Orange–red</option>
+      <option value="greys">Greyscale</option>
+    </optgroup>
+    <optgroup label="Diverging — for layers with a pivot">
+      <option value="rdylgn">Red–yellow–green</option>
+      <option value="rdbu">Red–white–blue</option>
+      <option value="spectral">Spectral</option>
+      <option value="brbg">Brown–teal</option>
+    </optgroup>
+  </select>
+  <label><input type="checkbox" id="crev"> Reverse the ramp</label>
+  <label><input type="radio" name="sc" id="scFixed" checked> Fixed global range
+    <span class="q" data-tip="scale">?</span></label>
+  <label><input type="radio" name="sc" id="scStretch"> Stretch to current view
+    <b style="color:#ffa3a3">local scale</b></label>
+
+  <h2>EVI parameters <span class="q" data-tip="knobs">?</span></h2>
+  <div class="row"><span>Required clearance <span class="q" data-tip="thr">?</span></span><b><span id="vthr"></span>°</b></div>
+  <input type="range" id="thr" min="0" max="3" step="0.05" value="0.27">
+  <div class="note">0.27° places the full solar disc above the modelled horizon.</div>
+  <div class="row"><span>Full-margin clearance <span class="q" data-tip="soft">?</span></span><b><span id="vsoft"></span>°</b></div>
+  <input type="range" id="soft" min="0.25" max="5" step="0.05" value="1.5">
+  <div class="row"><span>Extinction τ <span class="q" data-tip="tau">?</span></span><b><span id="vtau"></span></b></div>
+  <input type="range" id="tau" min="0" max="0.6" step="0.01" value="0.20">
+  <div class="note">Extinction multiplier: exp(−τ × airmass). Set τ = 0 to disable it.</div>
+  <div class="row"><span>Heatmap opacity</span><b><span id="vop"></span></b></div>
+  <input type="range" id="op" min="0" max="1" step="0.05" value="0.50">
+
+  <h2>Basemap <span class="q" data-tip="basemap">?</span></h2>
+  <select id="base">
+    <option value="osm">OpenStreetMap</option>
+    <option value="sat">IGN PNOA aerial imagery</option>
+    <option value="topo">IGN MTN topographic map</option>
+    <option value="none">No basemap</option>
+  </select>
+  <label><input type="checkbox" id="lbl" checked> Roads &amp; place names on top <span class="q" data-tip="labels">?</span></label>
+  <div class="row"><span>Basemap brightness</span><b><span id="vbop"></span></b></div>
+  <input type="range" id="bop" min="0" max="1" step="0.05" value="0.55">
+
+  <h2>Terrain <span class="q" data-tip="terrain">?</span></h2>
+  <label><input type="checkbox" id="hs" checked> DEM hillshade</label>
+  <div class="row"><span>Relief exaggeration</span><b><span id="vhx"></span>×</b></div>
+  <input type="range" id="hx" min="0" max="1" step="0.05" value="0.6">
+  <select id="ctr">
+    <option value="off">Contours off</option>
+    <option value="lines">Contour lines</option>
+    <option value="bands">Stepped bands</option>
+  </select>
+  <select id="ctri" style="margin-top:6px">
+    <option value="25">every 25 m</option>
+    <option value="50">every 50 m</option>
+    <option value="100" selected>every 100 m</option>
+    <option value="200">every 200 m</option>
+    <option value="500">every 500 m</option>
+  </select>
+  <div class="row"><span>Contour opacity</span><b><span id="vctro"></span></b></div>
+  <input type="range" id="ctro" min="0" max="1" step="0.05" value="0.7">
+  <label><input type="checkbox" id="t3d"> 3D view toward the Sun</label>
+  <div class="row"><span>3D exaggeration</span><b><span id="v3x"></span>×</b></div>
+  <input type="range" id="t3x" min="1" max="4" step="0.1" value="1.6">
+
+  <h2>Overlays</h2>
+  <label><input type="checkbox" id="path" checked> Totality limits and central line</label>
+  <label><input type="checkbox" id="durc" checked> Duration contours</label>
+  <label><input type="checkbox" id="ieec"> GenCat reference map
+    <span class="q" data-tip="ieec">?</span></label>
+  <label><input type="checkbox" id="obs"> GenCat published observation points</label>
+
+  <h2>Time display <span class="q" data-tip="tz">?</span></h2>
+  <select id="tz">
+    <option value="local">Spanish peninsular time (CEST, UTC+2)</option>
+    <option value="utc">UTC</option>
+  </select>
+
+  <button id="reset">Reset view</button>
+  </div>
+</div>
+
+<script>
+/* Resolve the COG origin for hosted and local execution. */
+const R2_ORIGIN = 'https://eclipse-data.chungo.es';
+const COG_ORIGIN = /(^|\.)pages\.dev$|^eclipse\.chungo\.es$/.test(location.hostname)
+  ? R2_ORIGIN
+  : location.origin + '/data';
+
+/* Keep versioned filenames aligned with DATA_VERSION in cogspec.py. EVI is no longer one
+   file -- stats.json's `parcels` array lists one COG per band strip of the totality path.
+   IEEC/GenCat is a separate, Catalonia-only static artifact and does not share that
+   version counter. */
+const DEMU = COG_ORIGIN + '/dem.v2.tif';    // hillshade, 3D terrain, elevation
+const IEEC = COG_ORIGIN + '/ieec.v1.tif';   // GenCat/IEEC binary visibility raster
+const EVI_FALLBACK = COG_ORIGIN + '/evi.v1.tif';   // used only if stats.json has no parcels
+maplibregl.addProtocol('cog', MaplibreCOGProtocol.cogProtocol);
+
+/* Raw int16 wire format. Both tile rendering and point queries must use dec(). */
+const HOR=0, ALT=1, DROP=2, DUR=3, OCC=4;
+const SCALE = [0.01, 0.01, 0.001, 0.1, 0.01];         // raw int16 * SCALE = degrees / s / km
+const NOD = -32768;
+const _v = new Float64Array(5);                       // reused: dec() runs 65 536x per tile
+function dec(px) {
+  for (let i = 0; i < 5; i++) {
+    const r = px[i];
+    _v[i] = (r === NOD || !isFinite(r)) ? NaN : r * SCALE[i];
+  }
+  return _v;
+}
+// dec() reuses storage; retained point-query values require a copy.
+const decCopy = px => px ? Array.from(dec(px)) : null;
+
+// GenCat coverage [W,S,E,N] bounds tile and point requests.
+const IEEC_BOUNDS = [0.079, 40.479, 1.838, 41.786];
+const inIeec = (lat, lng) => lng >= IEEC_BOUNDS[0] && lng <= IEEC_BOUNDS[2] &&
+                             lat >= IEEC_BOUNDS[1] && lat <= IEEC_BOUNDS[3];
+
+/* EVI is parcelated: stats.json lists non-overlapping band strips, each its own COG.
+   A point belongs to at most one -- find it once and route every query through it. */
+const parcelUrl = p => COG_ORIGIN + '/' + p.file;
+function findParcel(lat, lng) {
+  const ps = STATS && STATS.parcels;
+  if (!ps) return null;
+  for (const p of ps) {
+    const [w, s, e, n] = p.bbox_4326;
+    if (lng >= w && lng <= e && lat >= s && lat <= n) return p;
+  }
+  return null;
+}
+// Single-file fallback for old stats.json without a `parcels` array.
+function eviUrls() {
+  if (STATS && STATS.parcels) return STATS.parcels.map(parcelUrl);
+  if (STATS && STATS.files && STATS.files.evi) return [COG_ORIGIN + '/' + STATS.files.evi];
+  return [EVI_FALLBACK];
+}
+
+/* Quadratic fits provide local maximum-eclipse time and solar azimuth.
+   Export residuals are 0.004 s and 0.0001 degrees. */
+const SUN_FALLBACK = {                       // used only if stats.json is missing
+  lon0:-0.225, lat0:40.675, date_utc:'2026-08-12',
+  t_max_ut_s:[66666.675, -16.7726, -93.0472, -0.4789, 0.7472, -0.5323],
+  az_mid_deg:[285.2928, 0.5903, -0.3292, -0.0005, 0.0131, -0.0084],
+};
+const TZ = { local:{ off:2, tag:'CEST' }, utc:{ off:0, tag:'UTC' } };
+const p2 = n => String(n).padStart(2, '0');
+
+function sunAt(lat, lng) {
+  const f = (STATS && STATS.sun) || SUN_FALLBACK;
+  const dx = lng - f.lon0, dy = lat - f.lat0;
+  const ev = c => c[0] + c[1]*dx + c[2]*dy + c[3]*dx*dx + c[4]*dx*dy + c[5]*dy*dy;
+  const ut = Math.round(ev(f.t_max_ut_s));           // seconds UT on the eclipse date
+  const hhmmss = (s, off) => { const t = ((s + off*3600) % 86400 + 86400) % 86400;
+    return `${p2(t/3600|0)}:${p2(t%3600/60|0)}:${p2(t%60)}`; };
+  return {
+    az: ev(f.az_mid_deg),
+    ut,
+    iso: `${f.date_utc || '2026-08-12'}T${hhmmss(ut, 0)}Z`,   // PeakFinder wants UTC
+    at: s => hhmmss(s, TZ[P.tz].off),                          // ...humans want CEST
+    tag: TZ[P.tz].tag,
+  };
+}
+const SUN_AZ_MID = 285.3;    // AOI-wide mean, for prose and tooltips only
+
+const DUR_REF = 120.0;
+const P = { thr:0.27, soft:1.5, tau:0.20, layer:'evi', op:0.50, stretch:false,
+            base:'osm', bop:0.55, cmap:'auto', crev:false,
+            ctr:'off', ctri:100, ctro:0.7, hx:0.6, t3x:1.6, tz:'local' };
+let STATS = null, ref = null;
+
+/* ---- model, mirroring ../score.py ---- */
+const airmass = a => 1/(Math.sin(Math.max(a,0.05)*Math.PI/180) + 0.50572*Math.pow(Math.max(a,0.05)+6.07995,-1.6364));
+function fvis(hor, alt, drop, thr) {
+  const need = hor + thr, c2 = alt + drop/2;
+  if (!(drop > 1e-6)) return c2 > need ? 1 : 0;
+  return Math.min(1, Math.max(0, (c2 - need) / drop));
+}
+function evi(hor, alt, drop, dur) {
+  if (!(dur > 0)) return 0;
+  return fvis(hor, alt, drop, P.thr) * Math.sqrt(dur/DUR_REF)
+       * Math.exp(-P.tau*airmass(alt)) * Math.min(1, Math.max(0, (alt-hor)/P.soft));
+}
+const eviCeiling = () => Math.max(1e-4, Math.sqrt(110/DUR_REF) * Math.exp(-P.tau*airmass(6.5)));
+
+/* Diverging defaults mark a physical pivot; sequential defaults encode magnitude. */
+const PALETTES = {
+  magma:   ['#000004','#3b0f70','#8c2981','#de4968','#fe9f6d','#fcfdbf'],
+  inferno: ['#000004','#420a68','#932667','#dd513a','#fca50a','#fcffa4'],
+  viridis: ['#440154','#414487','#2a788e','#22a884','#7ad151','#fde725'],
+  plasma:  ['#0d0887','#6a00a8','#b12a90','#e16462','#fca636','#f0f921'],
+  cividis: ['#00224e','#35456c','#666970','#948e77','#c9b35b','#fee838'],
+  turbo:   ['#30123b','#4145ab','#4675ed','#39a2fc','#1bcfd4','#24eca6','#61fc6c','#a4fc3b',
+            '#d1e834','#f3c63a','#fe9b2d','#f36315','#d93806','#b11901','#7a0402'],
+  blues:   ['#08306b','#2171b5','#6baed6','#c6dbef','#f7fbff'],
+  orrd:    ['#fff7ec','#fdd49e','#fc8d59','#d7301f','#7f0000'],
+  greys:   ['#0b0d12','#3a3f4b','#767c8a','#b6bbc5','#f2f4f8'],
+  rdylgn:  ['#a50026','#f46d43','#fee08b','#a6d96a','#1a9850'],
+  rdbu:    ['#67001f','#d6604d','#f7f7f7','#4393c3','#053061'],
+  spectral:['#9e0142','#f46d43','#fee08b','#abdda4','#5e4fa2'],
+  brbg:    ['#543005','#bf812d','#f5f5f5','#35978f','#003c30'],
+};
+const DIVERGING = ['rdylgn','rdbu','spectral','brbg'];
+
+/* Fixed domains use whole-AOI percentiles from stats.json. */
+const RAMPS = {
+  evi:     { band:null, pal:'magma', unit:'', dec:3, diverge:null,
+             desc:'Composite of visible totality fraction, duration, atmospheric transmission, and terrain margin. Blocked and out-of-path pixels are masked.' },
+  clear:   { band:'horizon_deg', pal:'rdylgn', unit:'°', dec:1, diverge:0,
+             desc:'Apparent Sun altitude minus terrain-horizon angle. Positive values place the Sun’s centre above the modelled horizon.' },
+  fvis:    { band:null, pal:'rdylgn', min:0, max:1, unit:'', dec:2, diverge:null,
+             desc:'Estimated fraction of C2–C3 for which the Sun clears the required terrain margin.' },
+  horizon: { band:'horizon_deg', pal:'inferno', unit:'°', dec:1, diverge:null,
+             desc:'Highest modelled terrain angle along the local solar azimuth.' },
+  dur:     { band:'duration_s', pal:'blues', unit:' s', dec:0, diverge:null,
+             desc:'Seconds between second and third contact; zero outside the path of totality.' },
+  alt:     { band:'sun_alt_deg', pal:'viridis', unit:'°', dec:2, diverge:null,
+             desc:'Apparent solar altitude at maximum eclipse.' },
+  occ:     { band:'occluder_km', pal:'orrd', unit:' km', dec:0, diverge:null,
+             desc:'Distance to the terrain sample that sets the modelled horizon.' },
+  rel:     { band:null, pal:'rdylgn', unit:'×', dec:2, diverge:1,
+             desc:'EVI divided by EVI at the reference marker. Values above 1 are higher than the reference.' },
+};
+const hex2rgb = h => [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)];
+
+// Active palette as evenly spaced [position, colour] stops.
+const paletteOf = () => (P.cmap === 'auto' ? RAMPS[P.layer].pal : P.cmap);
+function rampStops() {
+  let c = PALETTES[paletteOf()] || PALETTES.magma;
+  if (P.crev) c = c.slice().reverse();
+  return c.map((h, i) => [i / (c.length - 1), h]);
+}
+
+/* Cache the colour ramp: the tile callback runs once per pixel. */
+function buildLUT(stops) {
+  const S = stops.map(([p, h]) => [p, hex2rgb(h)]);
+  const lut = new Uint8Array(256 * 3);
+  for (let i = 0; i < 256; i++) {
+    const t = i / 255;
+    let r, g, b;
+    for (let k = 0; k < S.length - 1; k++) {
+      const [a, A] = S[k], [c, B] = S[k + 1];
+      if (t <= c || k === S.length - 2) {
+        const u = (c - a) ? Math.min(1, Math.max(0, (t - a) / (c - a))) : 0;
+        r = A[0] + (B[0] - A[0]) * u; g = A[1] + (B[1] - A[1]) * u; b = A[2] + (B[2] - A[2]) * u;
+        break;
+      }
+    }
+    lut[i*3] = r; lut[i*3+1] = g; lut[i*3+2] = b;
+  }
+  return lut;
+}
+// Direct interpolation is sufficient for the small legend and histogram.
+function ramp(t, stops) {
+  t = Math.min(1, Math.max(0, t));
+  const S = stops;
+  for (let i=0;i<S.length-1;i++) {
+    const [a,ca]=S[i], [b,cb]=S[i+1];
+    if (t<=b) { const u=(b-a)?(t-a)/(b-a):0, A=hex2rgb(ca), B=hex2rgb(cb);
+      return [A[0]+(B[0]-A[0])*u, A[1]+(B[1]-A[1])*u, A[2]+(B[2]-A[2])*u]; }
+  }
+  return hex2rgb(S[S.length-1][1]);
+}
+
+/* Cache atmospheric transmission across the AOI's solar-altitude range. */
+const QA_N = 512, QA_LO = 2.0, QA_HI = 8.0, QA_SCALE = (QA_N - 1) / (QA_HI - QA_LO);
+function buildQA(tau) {
+  const q = new Float32Array(QA_N);
+  for (let i = 0; i < QA_N; i++) q[i] = Math.exp(-tau * airmass(QA_LO + i / QA_SCALE));
+  return q;
+}
+
+// Resolve the selected field outside the per-pixel loop.
+function makeValueFn() {
+  const thr = P.thr, soft = P.soft;
+  const refEvi = (ref && ref.evi > 1e-6) ? ref.evi : NaN;
+  const qa = buildQA(P.tau);
+  const qaAt = alt => qa[alt <= QA_LO ? 0 : alt >= QA_HI ? QA_N - 1 : ((alt - QA_LO) * QA_SCALE) | 0];
+
+  const eviFast = (hor, alt, drop, dur) => {
+    if (!(dur > 0)) return 0;
+    const need = hor + thr, c2 = alt + drop * 0.5;
+    let f;
+    if (drop > 1e-6) { f = (c2 - need) / drop; f = f < 0 ? 0 : f > 1 ? 1 : f; }
+    else f = c2 > need ? 1 : 0;
+    if (f <= 0) return 0;
+    let qm = (alt - hor) / soft; qm = qm < 0 ? 0 : qm > 1 ? 1 : qm;
+    return f * Math.sqrt(dur / DUR_REF) * qaAt(alt) * qm;
+  };
+
+  switch (P.layer) {
+    case 'evi':     return px => eviFast(px[HOR], px[ALT], px[DROP], px[DUR]);
+    case 'rel':     return px => eviFast(px[HOR], px[ALT], px[DROP], px[DUR]) / refEvi;
+    case 'clear':   return px => px[ALT] - px[HOR];
+    case 'fvis':    return px => px[DUR] > 0 ? fvis(px[HOR], px[ALT], px[DROP], thr) : 0;
+    case 'horizon': return px => px[HOR];
+    case 'dur':     return px => px[DUR];
+    case 'alt':     return px => px[ALT];
+    case 'occ':     return px => px[OCC];
+  }
+}
+// slow path, used only by the histogram (a few hundred samples)
+function pixelValue(px) {
+  const hor=px[HOR], alt=px[ALT], drop=px[DROP], dur=px[DUR];
+  switch (P.layer) {
+    case 'evi':     return evi(hor,alt,drop,dur);
+    case 'clear':   return alt - hor;
+    case 'fvis':    return dur > 0 ? fvis(hor,alt,drop,P.thr) : 0;
+    case 'horizon': return hor;
+    case 'dur':     return dur;
+    case 'alt':     return alt;
+    case 'occ':     return px[OCC];
+    case 'rel':     return (ref && ref.evi > 1e-6) ? evi(hor,alt,drop,dur) / ref.evi : NaN;
+  }
+}
+// A layer is "gated" if a blocked pixel has no meaningful value on its ramp.
+const GATED = { evi:1, fvis:0, rel:1 };
+
+// Fixed domain: export-time whole-AOI percentiles from stats.json.
+function fixedDomain() {
+  const R = RAMPS[P.layer];
+  if (P.layer === 'evi')  return [0, eviCeiling()];
+  if (P.layer === 'fvis') return [0, 1];
+  if (P.layer === 'rel')  return [0, 2];              // 1.0 = same as reference, centred
+  if (P.layer === 'clear') {
+    const h = STATS && STATS.domains['horizon_deg'];
+    const a = STATS && STATS.domains['sun_alt_deg'];
+    const m = (h && a) ? Math.max(3, a[1] - h[0]) : 4;
+    return [-m, m];                                   // symmetric, so the ramp's midpoint IS 0
+  }
+  const d = STATS && R.band && STATS.domains[R.band];
+  return d ? [d[0], d[1]] : (FALLBACK[P.layer] || [0, 1]);
+}
+// Static domains used before stats.json loads.
+const FALLBACK = { horizon:[0,15], dur:[0,110], alt:[3.4,6.5], occ:[0,30] };
+
+// Stretch domain: p2..p98 of current-view samples; not comparable between views.
+function stretchDomain() {
+  if (!SAMPLES || SAMPLES.length < 20) return fixedDomain();
+  const vals = [];
+  for (const s of SAMPLES) {
+    if (!(s[DUR] > 0)) continue;
+    if (P.layer in GATED && fvis(s[HOR],s[ALT],s[DROP],P.thr) <= 0.001) continue;
+    const v = pixelValue(s);
+    if (isFinite(v)) vals.push(v);
+  }
+  if (vals.length < 20) return fixedDomain();
+  vals.sort((a,b) => a-b);
+  const q = p => vals[Math.min(vals.length-1, Math.max(0, Math.floor(p*(vals.length-1))))];
+  let lo = q(0.02), hi = q(0.98);
+  if (P.layer === 'clear') { const m = Math.max(Math.abs(lo), Math.abs(hi)); lo = -m; hi = m; }
+  return (hi - lo) > 1e-9 ? [lo, hi] : fixedDomain();
+}
+
+const domain = () => P.stretch ? stretchDomain() : fixedDomain();
+
+/* Hash-version tile URLs to invalidate MapLibre rendering without invalidating COG caches. */
+let ver = 0, firstVector = null;
+const MASK_BLOCKED = [70,32,42,220];     // blocked by terrain
+const MASK_NOPATH  = [28,30,38,150];     // outside totality
+
+function paint() {
+  const R = RAMPS[P.layer];
+  const [lo, hi] = domain();
+  const span = (hi - lo) || 1;
+  const gated = P.layer in GATED;
+  const stops = rampStops();
+  const lut = buildLUT(stops);
+  const valueOf = makeValueFn();
+  const thr = P.thr;
+
+  const [mbR, mbG, mbB, mbA] = MASK_BLOCKED;
+  const [mnR, mnG, mnB, mnA] = MASK_NOPATH;
+
+  const colorFn = (px, color) => {
+    const p = dec(px);                                 // raw int16 -> degrees / s / km
+    const hor = p[HOR], alt = p[ALT], dur = p[DUR];
+    if (!isFinite(hor) || !isFinite(alt)) {            // nodata
+      color[3] = 0; return;
+    }
+    if (!(dur > 0)) { color[0]=mnR; color[1]=mnG; color[2]=mnB; color[3]=mnA; return; }
+    if (gated) {
+      const drop = p[DROP], need = hor + thr, c2 = alt + drop * 0.5;
+      const f = drop > 1e-6 ? (c2 - need) / drop : (c2 > need ? 1 : 0);
+      if (f <= 0.001) { color[0]=mbR; color[1]=mbG; color[2]=mbB; color[3]=mbA; return; }
+    }
+    const v = valueOf(p);
+    if (!(v === v)) { color[3] = 0; return; }          // NaN, e.g. 'rel' with nothing pinned
+    let t = ((v - lo) / span) * 255;
+    t = t < 0 ? 0 : t > 255 ? 255 : t;
+    const i = (t | 0) * 3;
+    color[0] = lut[i]; color[1] = lut[i+1]; color[2] = lut[i+2]; color[3] = 255;
+  };
+
+  // One MapLibre source + layer per EVI parcel (or one, in single-file fallback). Every
+  // parcel shares the same colour function -- it is the same model, same bands, same scale.
+  ++ver;
+  for (let i = 0; map.getLayer('cog-'+i); i++) {
+    map.removeLayer('cog-'+i);
+    if (map.getSource('cog-'+i+'-src')) map.removeSource('cog-'+i+'-src');
+  }
+  const urls = eviUrls();
+  const parcels = (STATS && STATS.parcels) || null;
+  urls.forEach((base, i) => {
+    MaplibreCOGProtocol.setColorFunction(base, colorFn);
+    const lid = 'cog-'+i, sid = lid+'-src';
+    map.addSource(sid, { type:'raster', url:'cog://'+base+'#v'+ver, tileSize:256,
+      ...(parcels ? { bounds: parcels[i].bbox_4326 } : {}) });
+    map.addLayer({ id:lid, type:'raster', source:sid,
+      paint:{ 'raster-opacity':P.op, 'raster-resampling':'nearest', 'raster-fade-duration':0 } },
+      firstVector || undefined);
+  });
+
+  const leg = document.getElementById('legend'); leg.innerHTML = '';
+  for (let i=0;i<48;i++){ const c=ramp(i/47,stops); const el=document.createElement('i');
+    el.style.background=`rgb(${c[0]|0},${c[1]|0},${c[2]|0})`; leg.appendChild(el); }
+  document.getElementById('lmin').textContent = lo.toFixed(R.dec)+R.unit;
+  document.getElementById('lmax').textContent = hi.toFixed(R.dec)+R.unit;
+  // Warn when a pivoted field uses a sequential palette.
+  const pivots = R.diverge !== null && R.diverge !== undefined;
+  const mismatch = pivots && !DIVERGING.includes(paletteOf());
+  document.getElementById('desc').innerHTML = esc(R.desc) +
+    (mismatch ? ` <span style="color:#ffd23f">This layer pivots at ${R.diverge}${R.unit} — a
+      diverging palette will show you where that is.</span>` : '');
+  drawHist(lo, hi);
+}
+// Coalesce slider input before rerendering visible tiles.
+let tmr=null;
+const repaint = () => { const b=document.getElementById('busy'); b.style.display='block';
+  clearTimeout(tmr); tmr=setTimeout(()=>{ paint(); setTimeout(()=>b.style.display='none',350); },200); };
+
+/* Current-view distribution within the active colour domain. */
+let SAMPLES = null;                       // [{hor,alt,drop,dur,occ}] sampled once from the COG
+function drawHist(lo, hi) {
+  const cv = document.getElementById('hist'), g = cv.getContext('2d');
+  g.clearRect(0,0,cv.width,cv.height);
+  if (!SAMPLES || !SAMPLES.length) return;
+  const N = 56, bins = new Array(N).fill(0);
+  let n = 0;
+  for (const s of SAMPLES) {
+    if (!(s[DUR] > 0)) continue;
+    if (P.layer in GATED && fvis(s[HOR],s[ALT],s[DROP],P.thr) <= 0.001) continue;
+    const v = pixelValue(s);
+    const t = (v - lo)/(hi - lo || 1);
+    if (t < 0 || t > 1) continue;
+    bins[Math.min(N-1, Math.floor(t*N))]++; n++;
+  }
+  if (!n) return;
+  const mx = Math.max(...bins), w = cv.width/N;
+  const R = RAMPS[P.layer], stops = rampStops();
+  for (let i=0;i<N;i++) {
+    const h = (bins[i]/mx)*(cv.height-2);
+    const c = ramp(i/(N-1), stops);
+    g.fillStyle = `rgb(${c[0]|0},${c[1]|0},${c[2]|0})`;
+    g.fillRect(i*w, cv.height-h, w-0.5, h);
+  }
+  if (R.diverge !== null && R.diverge !== undefined) {
+    const t = (R.diverge - lo)/(hi - lo || 1);
+    if (t>=0 && t<=1) { g.strokeStyle='#fff'; g.lineWidth=1; g.beginPath();
+      g.moveTo(t*cv.width, 0); g.lineTo(t*cv.width, cv.height); g.stroke(); }
+  }
+}
+
+/* GPU elevation bands derived from the streamed raster DEM; no vector isolines. */
+const CTR_LO = -100, CTR_HI = 3400;              // metres; the AOI spans sea level to ~2600
+function contourRamp() {
+  const iv = P.ctri;
+  const st = ['interpolate', ['linear'], ['elevation']];
+  if (P.ctr === 'bands') {
+    // Alternating flat terraces with hard interval boundaries.
+    let k = 0;
+    for (let e = CTR_LO; e < CTR_HI; e += iv, k++) {
+      const c = (k % 2) ? 'rgba(255,255,255,0.17)' : 'rgba(0,0,0,0.17)';
+      st.push(e, c, e + iv - 0.01, c);
+    }
+  } else {
+    const half = Math.max(2, iv * 0.06);         // half-thickness, in METRES of elevation
+    const clear = 'rgba(0,0,0,0)';
+    for (let e = CTR_LO; e < CTR_HI; e += iv) {
+      const major = Math.round(e / iv) % 5 === 0;                 // index contour
+      const c = major ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.45)';
+      st.push(e - half - 0.01, clear, e - half, c, e + half, c, e + half + 0.01, clear);
+    }
+  }
+  return st;
+}
+function setContours() {
+  if (!map.getLayer('contours')) return;
+  const on = P.ctr !== 'off';
+  map.setLayoutProperty('contours', 'visibility', on ? 'visible' : 'none');
+  if (on) map.setPaintProperty('contours', 'color-relief-color', contourRamp());
+  map.setPaintProperty('contours', 'color-relief-opacity', P.ctro);
+  document.getElementById('vctro').textContent = P.ctro.toFixed(2);
+}
+
+/* Keyless raster sources. */
+const RASTERS = {
+  osm: { tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+         attribution:'© OpenStreetMap contributors',
+         paint:{ 'raster-saturation':-0.75, 'raster-brightness-max':0.9 } },
+  sat: { tiles:['https://www.ign.es/wmts/pnoa-ma?service=WMTS&request=GetTile&version=1.0.0' +
+                '&layer=OI.OrthoimageCoverage&style=default&tilematrixset=GoogleMapsCompatible' +
+                '&format=image/jpeg&TileMatrix={z}&TileCol={x}&TileRow={y}'],
+         attribution:'PNOA © Instituto Geográfico Nacional de España',
+         paint:{} },
+  topo:{ tiles:['https://www.ign.es/wmts/mapa-raster?service=WMTS&request=GetTile&version=1.0.0' +
+                '&layer=MTN&style=default&tilematrixset=GoogleMapsCompatible' +
+                '&format=image/jpeg&TileMatrix={z}&TileCol={x}&TileRow={y}'],
+         attribution:'MTN © Instituto Geográfico Nacional de España',
+         paint:{} },
+};
+const LABEL_TILES = 'https://basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}@2x.png';
+
+const HOME = { center:[-0.2,40.9], zoom:7.4, pitch:0, bearing:0 };
+const map = new maplibregl.Map({
+  // Named map state shares the hash with marker and reference parameters.
+  container:'map', ...HOME, maxPitch:80, hash:'map',
+  style:{ version:8, glyphs:'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
+    sources:{
+      osm:  { type:'raster', tiles:RASTERS.osm.tiles,  tileSize:256, attribution:RASTERS.osm.attribution },
+      sat:  { type:'raster', tiles:RASTERS.sat.tiles,  tileSize:256, attribution:RASTERS.sat.attribution, maxzoom:19 },
+      topo: { type:'raster', tiles:RASTERS.topo.tiles, tileSize:256, attribution:RASTERS.topo.attribution, maxzoom:17 },
+      labels:{ type:'raster', tiles:[LABEL_TILES], tileSize:512, attribution:'© CARTO, © OpenStreetMap contributors' },
+      demsrc:{ type:'raster-dem', url:'cog://'+DEMU+'#dem', tileSize:256 }
+    },
+    layers:[
+      { id:'osm',  type:'raster', source:'osm',
+        paint:{ 'raster-opacity':0.55, ...RASTERS.osm.paint } },
+      { id:'sat',  type:'raster', source:'sat',  layout:{ visibility:'none' },
+        paint:{ 'raster-opacity':0.55 } },
+      { id:'topo', type:'raster', source:'topo', layout:{ visibility:'none' },
+        paint:{ 'raster-opacity':0.55 } },
+      { id:'hillshade', type:'hillshade', source:'demsrc', paint:{ 'hillshade-exaggeration':0.6 } }
+    ]
+  }
+});
+const BASEMAPS = ['osm','sat','topo'];
+map.addControl(new maplibregl.NavigationControl({ visualizePitch:true }), 'top-right');
+map.addControl(new maplibregl.ScaleControl({ unit:'metric' }), 'bottom-right');
+
+const getJSON = async p => { try { return await (await fetch(p)).json(); }
+                             catch(e) { console.warn('missing', p); return null; } };
+
+map.on('load', async () => {
+  STATS = await getJSON('data/stats.json');
+
+  /* GenCat/IEEC binary reference for comparison with continuous EVI.
+     Categorical uint8: 1 visible, 0 blocked, 255 outside coverage. */
+  MaplibreCOGProtocol.setColorFunction(IEEC, (px, color) => {
+    const c = px[0];
+    if (c === 1)      { color[0]=0;   color[1]=230; color[2]=90;  color[3]=90; }
+    else if (c === 0) { color[0]=255; color[1]=60;  color[2]=60;  color[3]=90; }
+    else              { color[3] = 0; }
+  });
+  // Bound the source to GenCat coverage to avoid empty requests outside Catalonia.
+  map.addSource('ieec-src', { type:'raster', url:'cog://'+IEEC, tileSize:256,
+                              bounds:IEEC_BOUNDS });
+  map.addLayer({ id:'ieec-lyr', type:'raster', source:'ieec-src', layout:{ visibility:'none' },
+    paint:{ 'raster-opacity':0.75, 'raster-resampling':'nearest', 'raster-fade-duration':0 } });
+
+  // Contours remain legible above the model field.
+  map.addLayer({ id:'contours', type:'color-relief', source:'demsrc',
+    layout:{ visibility:'none' },
+    paint:{ 'color-relief-opacity':P.ctro, 'color-relief-color':contourRamp() } });
+
+  // Labels remain legible above imagery and model fields.
+  map.addLayer({ id:'labels', type:'raster', source:'labels',
+    paint:{ 'raster-opacity':0.9 } });
+
+  const path = await getJSON('data/totality.geojson') || {type:'FeatureCollection',features:[]};
+  map.addSource('path-src', { type:'geojson', data:path });
+  map.addLayer({ id:'dur-contours', type:'line', source:'path-src',
+    filter:['==',['get','kind'],'duration'],
+    paint:{ 'line-color':'#7fd3ff','line-width':1,'line-opacity':.5,'line-dasharray':[3,2] } });
+  map.addLayer({ id:'dur-labels', type:'symbol', source:'path-src',
+    filter:['==',['get','kind'],'duration'],
+    layout:{ 'symbol-placement':'line','text-field':['concat',['to-string',['get','seconds']],' s'],
+             'text-size':13,'text-font':['Open Sans Regular'] },
+    paint:{ 'text-color':'#9fdcff','text-halo-color':'#0b0d12','text-halo-width':1.4 } });
+  map.addLayer({ id:'limits', type:'line', source:'path-src', filter:['==',['get','kind'],'limit'],
+    paint:{ 'line-color':'#ffd23f','line-width':2.4 } });
+  map.addLayer({ id:'centreline', type:'line', source:'path-src', filter:['==',['get','kind'],'centreline'],
+    paint:{ 'line-color':'#ffd23f','line-width':1.4,'line-dasharray':[5,3],'line-opacity':.8 } });
+
+  const obs = await getJSON('data/observation_points.geojson') || {type:'FeatureCollection',features:[]};
+  map.addSource('obs-src', { type:'geojson', data:obs });
+  map.addLayer({ id:'obs-pts', type:'circle', source:'obs-src',
+    layout:{ visibility:'none' },
+    paint:{ 'circle-radius':9,'circle-stroke-width':2,'circle-stroke-color':'#0b0d12',
+            'circle-color':['case',['==',['get','visibility'],'visible'],'#7cff7c','#ff5c5c'] } });
+  map.addLayer({ id:'obs-lbl', type:'symbol', source:'obs-src',
+    layout:{ visibility:'none', 'text-field':['to-string',['get','id']], 'text-size':13,
+             'text-font':['Open Sans Bold'], 'text-allow-overlap':true,
+             'text-ignore-placement':true },
+    paint:{ 'text-color':'#101318','text-halo-color':'#ffffffaa','text-halo-width':0.7 } });
+
+  // Numbered markers, each its own colour (MARK_COLORS, cycled -- see markColor()); the
+  // reference marker keeps its own colour but gets a bigger radius and a yellow ring.
+  map.addSource('mark-src', { type:'geojson', data:{type:'FeatureCollection',features:[]} });
+  map.addLayer({ id:'mark-pts', type:'circle', source:'mark-src',
+    paint:{ 'circle-radius':['case',['get','isref'],21,17],
+            'circle-color':['get','color'],
+            'circle-stroke-width':['case',['get','isref'],3,2],
+            'circle-stroke-color':['case',['get','isref'],'#ffd23f','#0b0d12'],
+            'circle-opacity':.95 } });
+  map.addLayer({ id:'mark-lbl', type:'symbol', source:'mark-src',
+    layout:{ 'text-field':['to-string',['get','n']],'text-size':18,
+             'text-font':['Open Sans Bold'], 'text-allow-overlap':true,
+             'text-ignore-placement':true },
+    paint:{ 'text-color':'#04222a' } });
+
+  // Search result marker.
+  map.addSource('q-src', { type:'geojson', data:{type:'FeatureCollection',features:[]} });
+  map.addLayer({ id:'q-pt', type:'circle', source:'q-src',
+    paint:{ 'circle-radius':10,'circle-color':'#ff4fd8','circle-stroke-width':2,
+            'circle-stroke-color':'#fff','circle-opacity':.95 } });
+
+  // Dynamic model fields are inserted below comparison and annotation layers.
+  firstVector = 'ieec-lyr';
+  paint();
+  setContours();
+  loadHash();          // markers handed to us in the URL
+  sampleView();
+  updateSunBadge();
+});
+// Defer lookup because resample is initialized later in module scope.
+map.on('moveend', () => resample());
+map.on('move', updateSunBadge);       // needle stays honest through pan/rotate/tilt
+
+/* Where the sun sits at mid-totality, for the map's current centre. A fixed compass
+   needle rather than a map layer: the direction barely changes across the AOI (~1 deg),
+   so one small always-on indicator says more than a per-pixel raster would. */
+function updateSunBadge() {
+  const svg = document.getElementById('suncompass-svg');
+  const c = map.getCenter();
+  const s = sunAt(c.lat, c.lng);
+  if (!isFinite(s.az)) { svg.style.display = 'none'; return; }
+  const bearing = map.getBearing();
+  // The whole dial (N/E/S/W) counter-rotates with the map so its letters always point
+  // true -- N is really north on screen even when the map itself is rotated or the 3D
+  // view is facing the sun. The needle then just points at the sun's true azimuth.
+  document.getElementById('suncompass').setAttribute('transform', `rotate(${-bearing} 21 21)`);
+  document.getElementById('sunneedle').setAttribute('transform', `rotate(${s.az} 21 21)`);
+  svg.style.display = 'inline-block';
+}
+
+/* Sample the current view for the histogram and local stretch domain. */
+let sampling = false;
+async function sampleView() {
+  if (sampling) return;
+  sampling = true;
+  try {
+    const b = map.getBounds();
+    // A 24x24 coarse grid reuses overview tiles and resolves the 56-bin histogram.
+    const z = Math.max(6, Math.min(10, Math.round(map.getZoom()) - 2));
+    const N = 24, out = [], jobs = [];
+    for (let i=0;i<N;i++) for (let j=0;j<N;j++) {
+      const lng = b.getWest() + (b.getEast()-b.getWest())*(i+0.5)/N;
+      const lat = b.getSouth() + (b.getNorth()-b.getSouth())*(j+0.5)/N;
+      const p = findParcel(lat, lng);
+      const url = p ? parcelUrl(p) : (STATS && STATS.parcels ? null : eviUrls()[0]);
+      if (!url) continue;                    // parcelated but no parcel covers this point
+      jobs.push(MaplibreCOGProtocol.locationValues(url, { latitude:lat, longitude:lng }, z)
+        .then(raw => { const v = decCopy(raw);
+                       if (v && isFinite(v[HOR]) && isFinite(v[ALT])) out.push(v); })
+        .catch(()=>{}));
+    }
+    await Promise.all(jobs);
+    SAMPLES = out;
+    const [lo,hi] = domain();
+    drawHist(lo,hi);
+    if (P.stretch) paint();          // stretched domain depends on the samples
+  } finally { sampling = false; }
+}
+let stmr = null;
+const resample = () => { clearTimeout(stmr); stmr = setTimeout(sampleView, 600); };
+
+/* ---- click ---- */
+const fmtPt = (v, elev) => {
+  const hor=v[HOR],alt=v[ALT],drop=v[DROP],dur=v[DUR];
+  return { hor, alt, drop, dur, elev, occ:v[OCC],
+           clear:alt-hor, f: dur>0?fvis(hor,alt,drop,P.thr):0,
+           evi: evi(hor,alt,drop,dur), X: airmass(alt) };
+};
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* Outbound map links preserve the current coordinates and zoom. */
+const zoomOf = () => Math.max(1, Math.min(21, Math.round(map.getZoom())));
+const gmaps = (lat,lng) =>
+  `https://www.google.com/maps?q=${lat.toFixed(6)},${lng.toFixed(6)}&z=${zoomOf()}`;
+const osmap = (lat,lng) =>
+  `https://www.openstreetmap.org/?mlat=${lat.toFixed(6)}&mlon=${lng.toFixed(6)}` +
+  `#map=${zoomOf()}/${lat.toFixed(5)}/${lng.toFixed(5)}`;
+/* Aim Street View at the local maximum-eclipse Sun position. */
+const gsv = (lat,lng,alt) =>
+  `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat.toFixed(6)},${lng.toFixed(6)}` +
+  `&heading=${sunAt(lat,lng).az.toFixed(1)}&pitch=${(isFinite(alt) ? alt : 5).toFixed(1)}&fov=90`;
+/* PeakFinder receives local azimuth, altitude, UTC time, and a narrow skyline FOV. */
+const PF_FOV = 60;
+const peakf = (lat,lng,alt) => { const s = sunAt(lat, lng);
+  return `https://www.peakfinder.com/?lat=${lat.toFixed(5)}&lng=${lng.toFixed(5)}` +
+         `&azi=${s.az.toFixed(2)}&alt=${(isFinite(alt) ? alt : 5).toFixed(2)}&fov=${PF_FOV}` +
+         `&date=${s.iso}&cfg=es&name=${encodeURIComponent(`${lat.toFixed(4)}, ${lng.toFixed(4)}`)}`;
+};
+
+/* Marker set with one optional EVI reference point. */
+const MARKS = [];        // [{lat, lng, d}] -- d is the model readout, or null outside the AOI
+let refIdx = -1;         // index into MARKS, or -1
+// Distinct hue per marker (cycled), so a pin, its list row, and its popup accent all read
+// as the same object at a glance -- useful once you have more than two saved points.
+const MARK_COLORS = ['#00e5ff','#ff8a3d','#c792ff','#7cff7c','#ff5c8a','#5ce1ff','#ffd23f'];
+const markColor = i => MARK_COLORS[i % MARK_COLORS.length];
+// `ref` is what paint()/inspect() read. Kept in sync rather than recomputed, because the
+// per-pixel colour function closes over it 65 536 times a tile.
+function syncRef() {
+  const m = refIdx >= 0 ? MARKS[refIdx] : null;
+  ref = (m && m.d) ? { ...m.d, lat:m.lat, lng:m.lng } : null;
+  if (!ref) refIdx = m ? refIdx : -1;
+}
+
+async function probe(lat, lng) {
+  const at = { latitude:lat, longitude:lng }, z = map.getZoom();
+  const q = url => MaplibreCOGProtocol.locationValues(url, at, z)
+                     .catch(err => { console.warn(url, err); return null; });
+  const p = findParcel(lat, lng);
+  const eviUrl = p ? parcelUrl(p) : (STATS && STATS.parcels ? null : eviUrls()[0]);
+  if (!eviUrl) return null;                  // parcelated but no parcel covers this point
+  const [raw, dem, ie] = await Promise.all([
+    q(eviUrl), q(DEMU), inIeec(lat, lng) ? q(IEEC) : Promise.resolve(null)]);
+  const v = decCopy(raw);
+  if (!v || !isFinite(v[HOR]) || !isFinite(v[ALT])) return null;
+  const elev = (dem && isFinite(dem[0]) && dem[0] !== NOD) ? dem[0] : NaN;
+  const d = fmtPt(v, elev);
+  d.ieec = (ie && (ie[0] === 0 || ie[0] === 1)) ? ie[0] : null;
+  return d;
+}
+
+function renderMarks() {
+  const src = map.getSource('mark-src');
+  if (src) src.setData({ type:'FeatureCollection', features: MARKS.map((m, i) => ({
+    type:'Feature', properties:{ n:i+1, isref:i === refIdx, color:markColor(i) },
+    geometry:{ type:'Point', coordinates:[m.lng, m.lat] } })) });
+
+  const box = document.getElementById('mks');
+  box.innerHTML = MARKS.length ? MARKS.map((m, i) => {
+    const evi = m.d ? 'EVI ' + m.d.evi.toFixed(3) : '—';
+    const isref = i === refIdx;
+    return `<div class="mk${isref ? ' isref' : ''}">` +
+      `<span class="n" style="color:${markColor(i)}">${i+1}</span>` +
+      `<span class="c" onclick="mkGo(${i})" title="Open marker">` +
+        `${m.lat.toFixed(4)}, ${m.lng.toFixed(4)}</span>` +
+      `<span class="e">${evi}</span>` +
+      `<button class="ref${isref ? ' on' : ''}" onclick="mkToggleRef(${i})" ` +
+        `title="${isref ? 'Clear reference' : 'Use as reference'}">★</button>` +
+      `<button onclick="mkDel(${i})" title="Remove">×</button></div>`;
+  }).join('') : '<div class="empty">No saved markers. Right-click a pin, or inspect a point and save it.</div>';
+
+  const cmp = document.getElementById('cmp');
+  cmp.innerHTML = ref
+    ? `<div class="refline"><span>★ ref #${refIdx+1} · EVI ${ref.evi.toFixed(3)} · ` +
+      `${ref.dur.toFixed(0)}s</span>` +
+      `<button class="relbtn${P.layer === 'rel' ? ' on' : ''}" onclick="toggleRel()">Compare map</button></div>`
+    : '';
+  writeHash();
+}
+
+const same = (a, b) => Math.abs(a.lat - b.lat) < 1e-6 && Math.abs(a.lng - b.lng) < 1e-6;
+
+async function mkAdd(lat, lng) {
+  if (MARKS.findIndex(m => same(m, { lat, lng })) < 0)
+    MARKS.push({ lat, lng, d: await probe(lat, lng) });
+  renderMarks();
+}
+function mkToggleRef(i) {
+  refIdx = refIdx === i ? -1 : i; syncRef();
+  if (refIdx < 0 && P.layer === 'rel') setLayer('evi');
+  renderMarks();
+  if (P.layer === 'rel') repaint();
+}
+function mkDel(i) {
+  MARKS.splice(i, 1);
+  if (refIdx === i) refIdx = -1; else if (refIdx > i) refIdx--;
+  syncRef(); renderMarks();
+  if (P.layer === 'rel' && !ref) setLayer('evi'); else if (P.layer === 'rel') repaint();
+}
+function mkGo(i)     { const m = MARKS[i]; if (m) { map.flyTo({ center:[m.lng, m.lat],
+                       zoom: Math.max(map.getZoom(), 12) }); inspect(m.lat, m.lng); } }
+// Clicking a pin that is already on screen should just open it, not re-centre the map.
+function mkOpen(i)   { const m = MARKS[i]; if (m) inspect(m.lat, m.lng, `Marker #${i+1}`); }
+function toggleRel() { setLayer(P.layer === 'rel' ? 'evi' : 'rel'); renderMarks(); }
+function setLayer(l) { P.layer = l; document.getElementById('layer').value = l; repaint(); }
+
+/* Right-click menu on a marker pin. */
+function showMarkerMenu(i, x, y) {
+  const m = MARKS[i]; if (!m) return;
+  const isref = i === refIdx;
+  const menu = document.getElementById('mkmenu');
+  menu.innerHTML =
+    `<button onclick="mkCopyCoords(${i})">Copy coordinates</button>` +
+    `<button onclick="mkOpen(${i});hideMarkerMenu()">Open</button>` +
+    `<button onclick="mkToggleRef(${i});hideMarkerMenu()">` +
+      `${isref ? 'Clear reference' : 'Use as reference'}</button>` +
+    `<hr>` +
+    `<button class="danger" onclick="mkDel(${i});hideMarkerMenu()">Delete marker</button>`;
+  const mapRect = map.getContainer().getBoundingClientRect();
+  menu.style.left = (mapRect.left + x) + 'px';
+  menu.style.top = (mapRect.top + y) + 'px';
+  menu.style.display = 'block';
+  // Keep it on screen if the click landed near an edge.
+  requestAnimationFrame(() => {
+    const r = menu.getBoundingClientRect();
+    if (r.right > window.innerWidth - 8) menu.style.left = (window.innerWidth - r.width - 8) + 'px';
+    if (r.bottom > window.innerHeight - 8) menu.style.top = (window.innerHeight - r.height - 8) + 'px';
+  });
+}
+function hideMarkerMenu() { document.getElementById('mkmenu').style.display = 'none'; }
+function mkCopyCoords(i) {
+  const m = MARKS[i]; if (!m) return;
+  const txt = `${m.lat.toFixed(5)}, ${m.lng.toFixed(5)}`;
+  hideMarkerMenu();
+  if (typeof navigator !== 'undefined' && navigator.clipboard) navigator.clipboard.writeText(txt);
+  else prompt('Copy coordinates:', txt);
+}
+
+/* Hash state: semicolon-delimited points and a one-based reference index. */
+function writeHash() {
+  const p = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+  if (MARKS.length) p.set('pts', MARKS.map(m => `${m.lat.toFixed(5)},${m.lng.toFixed(5)}`).join(';'));
+  else p.delete('pts');
+  if (refIdx >= 0) p.set('ref', String(refIdx + 1)); else p.delete('ref');
+  // Preserve delimiters used by the MapLibre and marker hash formats.
+  const s = p.toString().replace(/%2C/gi, ',').replace(/%3B/gi, ';').replace(/%2F/gi, '/');
+  if (typeof history !== 'undefined' && history.replaceState)
+    history.replaceState(null, '', s ? '#' + s : location.pathname);
+}
+async function restore(list, wantRef) {
+  MARKS.length = 0; refIdx = -1;
+  for (const [lat, lng] of list) MARKS.push({ lat, lng, d: await probe(lat, lng) });
+  if (wantRef >= 0 && wantRef < MARKS.length) refIdx = wantRef;
+  syncRef(); renderMarks();
+}
+function loadHash() {
+  const p = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+  const pts = p.get('pts');
+  if (!pts) { renderMarks(); return; }
+  const list = pts.split(';').map(s => parseCoords(s)).filter(Boolean);
+  restore(list, (parseInt(p.get('ref') || '0', 10) || 0) - 1);
+}
+
+function mkShare() {
+  writeHash();
+  const b = document.getElementById('mkshare'), url = location.href;
+  const done = () => { b.textContent = 'Copied'; setTimeout(() => { b.textContent = 'Copy link'; }, 1600); };
+  if (typeof navigator !== 'undefined' && navigator.clipboard)
+    navigator.clipboard.writeText(url).then(done, () => prompt('Copy URL:', url));
+  else prompt('Copy URL:', url);
+}
+function mkLoad() {
+  const s = prompt('Paste a shared URL or coordinates. Use one lat, lon pair per line.');
+  if (!s) return;
+  const m = s.match(/[#&?]pts=([^&]+)/);
+  const body = m ? decodeURIComponent(m[1]) : s;
+  const list = body.split(/[;\n]+/).map(t => parseCoords(t.trim())).filter(Boolean);
+  if (!list.length) { alert('No valid coordinates found.'); return; }
+  const r = s.match(/[#&?]ref=(\d+)/);
+  restore(list, (r ? +r[1] : 0) - 1);
+  if (list.length) map.flyTo({ center:[list[0][1], list[0][0]], zoom: Math.max(map.getZoom(), 10) });
+}
+
+/* Observer-view eclipse sequence. Non-true modes enlarge both discs and relative offset. */
+const CART = () => (STATS && STATS.cartoon) ||
+  { r_sun:0.263, r_moon:0.2717, vx:-1.5627e-4, vy:6.0408e-5, az_rate:2.664e-3 };
+function skyCartoon(d, lat, lng, mode = 'full', S = 14) {
+  if (!(d.dur > 0)) return '';
+  const C = CART(), rs = C.r_sun, rm = C.r_moon, V = Math.hypot(C.vx, C.vy);
+  const D = (rs + rm) / V, altRate = d.drop / d.dur;
+  const b = Math.sqrt(Math.max(0, (rm - rs) ** 2 - (V * d.dur / 2) ** 2));
+  const px = -C.vy / V, py = C.vx / V, EX = mode === 'true' ? 1 : 2.1;
+  const s = sunAt(lat, lng), hor = d.hor, rad = rm * EX;
+  const F = [-D, -D/2, 0, D/2, D].map(dt => {
+    const ox = C.vx*dt + b*px, oy = C.vy*dt + b*py;
+    return { dt, sx: C.az_rate*dt, sy: d.alt - altRate*dt,
+             mx: C.az_rate*dt + ox*EX, my: d.alt - altRate*dt + oy*EX,
+             total: Math.hypot(ox, oy) <= rm - rs, below: d.alt - altRate*dt < hor };
+  });
+  // Full and true modes share axes; compact mode fits the popup geometry.
+  let x0, x1, yTop, yBot;
+  if (mode === 'compact') {
+    const xs = F.flatMap(f => [f.sx, f.mx]);
+    x0 = Math.min(...xs) - rad - 0.5; x1 = Math.max(...xs) + rad + 0.5;
+    const hi = Math.max(...F.map(f=>f.sy)), lo = Math.min(...F.map(f=>f.sy));
+    yTop = Math.min(hi + rad + 0.4, d.alt + 6.5); yBot = Math.max(lo - rad - 0.4, hor - 1.4);
+    yTop = Math.max(yTop, hor + 1.0); yBot = Math.min(yBot, hor - 0.8);
+  } else {
+    x0 = -9.6; x1 = 9.6; yTop = 17.6; yBot = -5.6;                      // covers the whole AOI
+  }
+  const w = Math.round((x1 - x0) * S), h = Math.round((yTop - yBot) * S);
+  const X = x => ((x - x0) * S).toFixed(1), Y = y => ((yTop - y) * S).toFixed(1);
+  const rY = +Y(hor), rr = (rs*EX*S).toFixed(1), rM = (rm*EX*S).toFixed(1), fs = mode === 'full' ? 13 : 12;
+  const disks = F.map(f => {
+    const op = f.below ? 0.34 : 1;
+    const cor = (f.total && !f.below)
+      ? `<circle cx="${X(f.sx)}" cy="${Y(f.sy)}" r="${(rm*EX*1.7*S).toFixed(1)}" fill="#fff3c0" opacity=".22"/>` : '';
+    const lx = Math.max(15, Math.min(w - 15, +X(f.sx)));
+    return cor +
+      `<circle cx="${X(f.sx)}" cy="${Y(f.sy)}" r="${rr}" fill="#ffd23f" opacity="${op}"/>` +
+      `<circle cx="${X(f.mx)}" cy="${Y(f.my)}" r="${rM}" fill="#0d0f14" opacity="${Math.min(1,0.9*op+0.1)}" stroke="#3a3f4b" stroke-width=".5"/>` +
+      `<text x="${lx}" y="${(Y(f.sy) - rs*EX*S - 3).toFixed(1)}" fill="${f.below?'#8a8f9c':'#e7e9ee'}" font-size="${fs}" font-weight="700" text-anchor="middle">${s.at(Math.round(s.ut + f.dt)).slice(0,5)}</text>`;
+  }).join('');
+  return `<svg class="sky" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">` +
+    `<rect width="${w}" height="${h}" fill="#151b33"/>` +
+    `<rect x="0" y="${rY}" width="${w}" height="${(h-rY).toFixed(1)}" fill="#241a12"/>` +
+    `<line x1="0" y1="${rY}" x2="${w}" y2="${rY}" stroke="#5a4636"/>` +
+    `<text x="4" y="${(rY-4).toFixed(1)}" fill="#8a7a68" font-size="12">skyline</text>` +
+    disks + `</svg>`;
+}
+function cartoonBlock(d, lat, lng) {
+  if (!(d.dur > 0)) return '';
+  const clr = d.alt - d.hor;
+  const cap = clr >= 0 ? `<span class="up">clears the skyline by ${clr.toFixed(1)}°</span>`
+                       : `<span class="dn">${(-clr).toFixed(1)}° behind the skyline</span>`;
+  return `<div class="rel"><b>in the sky</b> ` +
+    `<span style="color:var(--dim)">${TZ[P.tz].tag}, WNW · open diagram</span>` +
+    `<div class="skymini" onclick="openSky(${lat},${lng})">${skyCartoon(d, lat, lng, 'compact', 9)}</div>` +
+    `<div style="font-size:13px;margin-top:2px">${cap}</div></div>`;
+}
+async function openSky(lat, lng) {
+  const d = await probe(lat, lng);
+  if (!d || !(d.dur > 0)) return;
+  const box = document.getElementById('skybox');
+  const clr = d.alt - d.hor;
+  box.innerHTML = `<div class="skycard" onclick="event.stopPropagation()">` +
+    `<div class="sh">In the sky — ${lat.toFixed(4)}, ${lng.toFixed(4)} · ${TZ[P.tz].tag} · WNW` +
+    `<span onclick="document.getElementById('skybox').style.display='none'" class="sx">✕</span></div>` +
+    `<div class="scl">C1–C4 sequence</div>${skyCartoon(d, lat, lng, 'full', 15)}` +
+    `<div class="scl">True angular scale</div>${skyCartoon(d, lat, lng, 'true', 13)}` +
+    `<div class="scap">${clr >= 0 ? `Totality clears the skyline by <b class="up">${clr.toFixed(1)}°</b>.`
+      : `Totality falls <b class="dn">${(-clr).toFixed(1)}°</b> behind the skyline; faded frames are blocked.`} ` +
+    `Discs in the upper diagram are enlarged 2.1×; the lower diagram uses true scale.</div></div>`;
+  box.style.display = 'flex';
+}
+function openAbout() {
+  const box = document.getElementById('skybox');
+  box.innerHTML = `<div class="skycard" onclick="event.stopPropagation()">` +
+    `<div class="sh">Author · Code · About` +
+    `<span onclick="document.getElementById('skybox').style.display='none'" class="sx">✕</span></div>` +
+    `<div class="scap">This model was designed and iterated via manual gathering of resources ` +
+    `and thinking electric meat, so-called human brain, currently typing this message ` +
+    `(<a href="https://ja-mf.github.io" target="_blank" rel="noopener">JAMF</a>), but the ` +
+    `implementation was done almost entirely by LLM. The main motivation is, basically, that ` +
+    `modeling relatively simple geometry problems is fun, and that it's worth proving that, as ` +
+    `of this date, public-domain geographic data is enough to run these calculations and render ` +
+    `them informatively in a browser; closer to the original spirit of the internet than most of ` +
+    `what runs on it now. Therefore, in line with Barthes's <i>La mort de l'auteur</i>, ` +
+    `interpretations and psychological readings of the code belong to the infinite multiplicity ` +
+    `of eyes beholding this publicly. Thus, I prefer to chew glass than to care about licensing; ` +
+    `feel free to do whatever you want with it. Nevertheless, happy to discuss the science and ` +
+    `implementation, and to do Freudian therapy on a mixture of LLMs that spitted this code over ` +
+    `the agentic sessions.</div>` +
+    `<div class="btns">` +
+    `<a href="https://github.com/ja-mf/eclipse-visibility-spain-2026" target="_blank" rel="noopener">Code ↗</a>` +
+    `<a href="model.html" target="_blank" rel="noopener">Model doc ↗</a>` +
+    `</div></div>`;
+  box.style.display = 'flex';
+}
+
+// Marker pins own left- and right-click; the generic map click below must not ALSO fire
+// for the same event (MapLibre dispatches both), or clicking a pin looked like it was
+// "adding a new marker" -- it was actually opening a second, overlapping inspect popup.
+map.on('click', e => {
+  if (map.queryRenderedFeatures(e.point, { layers:['mark-pts'] }).length) return;
+  inspect(e.lngLat.lat, e.lngLat.lng);
+});
+map.on('click', 'mark-pts', e => {
+  const i = e.features[0].properties.n - 1;
+  mkOpen(i);
+});
+map.on('contextmenu', 'mark-pts', e => {
+  e.preventDefault();
+  const i = e.features[0].properties.n - 1;
+  showMarkerMenu(i, e.point.x, e.point.y);
+});
+// A right-click anywhere else (not on a pin) closes any open marker menu.
+map.on('contextmenu', () => hideMarkerMenu());
+document.addEventListener('click', ev => {
+  if (!ev.target.closest('#mkmenu')) hideMarkerMenu();
+});
+
+// Cycle popup detail: diagram, primary values, full diagnostics.
+function cycleLvl(btn) {
+  const p = btn.closest('.pop'); if (!p) return;
+  const n = (+p.getAttribute('data-lvl')) % 3 + 1;
+  p.setAttribute('data-lvl', n);
+  btn.textContent = ['·', '··', '···'][n - 1];
+}
+const OPEN_POPUPS = new Set();
+let NEXT_POPUP_N = 1;
+const ORBIT_ANGLES = [-35, 35, -145, 145, -90, 90, 0, 180];
+const overlapArea = (a, b) => Math.max(0, Math.min(a.right,b.right)-Math.max(a.left,b.left)) *
+                              Math.max(0, Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top));
+
+function setPopupOrbit(pop, angle, radius) {
+  const a = angle * Math.PI / 180;
+  setPopupOffset(pop, Math.cos(a) * radius, Math.sin(a) * radius);
+}
+// Free placement: the popup can go anywhere, not just a fixed radius from its point. The
+// leader line (updatePopupLeader) tracks the popup's real screen box every time, so it
+// keeps pointing at the source coordinate no matter where the bubble is dragged to.
+function setPopupOffset(pop, dx, dy) {
+  const horizontal = window.innerWidth >= 720 && Math.abs(dx) > Math.abs(dy) * 1.15;
+  pop._orbit = { dx, dy, horizontal, leader:pop._orbit && pop._orbit.leader };
+  pop.getElement().classList.toggle('orbit-horizontal', horizontal);
+  pop.setOffset([dx, dy]);
+  updatePopupLeader(pop);
+  requestAnimationFrame(() => updatePopupLeader(pop));
+}
+
+function updatePopupLeader(pop) {
+  const o = pop._orbit;
+  if (!o || !o.leader || !pop.getLngLat()) return;
+  const p = map.project(pop.getLngLat());
+  const mapRect = map.getContainer().getBoundingClientRect();
+  const content = pop.getElement().querySelector('.maplibregl-popup-content');
+  let angle = 0, length = Math.hypot(o.dx, o.dy);
+  if (content) {
+    const box = content.getBoundingClientRect();
+    const cx = (box.left + box.right)/2 - mapRect.left;
+    const cy = (box.top + box.bottom)/2 - mapRect.top;
+    const dx = cx-p.x, dy = cy-p.y, distance = Math.hypot(dx,dy);
+    if (distance > 0.01) {
+      const ux = dx/distance, uy = dy/distance;
+      const edge = Math.min((box.width/2)/Math.max(Math.abs(ux),1e-6),
+                            (box.height/2)/Math.max(Math.abs(uy),1e-6));
+      angle = Math.atan2(dy,dx) * 180 / Math.PI;
+      length = Math.max(0, distance-edge-5);
+    }
+  }
+  o.leader.style.left = p.x + 'px';
+  o.leader.style.top = p.y + 'px';
+  o.leader.style.width = length + 'px';
+  o.leader.style.transform = `rotate(${angle}deg)`;
+}
+
+function placePopup(pop) {
+  const el = pop.getElement(), p = map.project(pop.getLngLat());
+  const measured = el.getBoundingClientRect();
+  const vertical = { w:320, h:Math.min(measured.height || 360, window.innerHeight - 28) };
+  const horizontal = { w:Math.min(560, window.innerWidth - 28),
+                       h:Math.min(vertical.h * .72, window.innerHeight - 28) };
+  const radius = Math.max(170, vertical.h / 2 + 36,
+    (window.innerWidth >= 720 ? horizontal.w : vertical.w) / 2 + 36);
+  const panel = document.getElementById('panel');
+  const panelRect = panel.classList.contains('folded') ? null : panel.getBoundingClientRect();
+  const others = [...OPEN_POPUPS].filter(x => x !== pop)
+    .map(x => x.getElement().getBoundingClientRect());
+  const margin = 12;
+  let best = null;
+  ORBIT_ANGLES.forEach((angle, order) => {
+    const a = angle * Math.PI / 180;
+    const side = window.innerWidth >= 720 && Math.abs(Math.cos(a)) > .68;
+    const s = side ? horizontal : vertical;
+    const cx = p.x + Math.cos(a)*radius, cy = p.y + Math.sin(a)*radius;
+    const r = { left:cx-s.w/2, right:cx+s.w/2, top:cy-s.h/2, bottom:cy+s.h/2 };
+    const overflow = Math.max(0,margin-r.left)+Math.max(0,r.right-window.innerWidth+margin)+
+                     Math.max(0,margin-r.top)+Math.max(0,r.bottom-window.innerHeight+margin);
+    const overlap = others.reduce((n,x)=>n+overlapArea(r,x),0);
+    const controls = panelRect ? overlapArea(r,panelRect) : 0;
+    const score = overflow*5000 + controls*12 + overlap*6 + order;
+    if (!best || score < best.score) best = { angle, radius, score };
+  });
+  setPopupOrbit(pop, best.angle, best.radius);
+}
+
+// Dragging the header rotates the bubble around its fixed map coordinate.
+function makeOrbital(pop) {
+  const el = pop.getElement(); if (!el) return;
+  el.classList.add('orbital-popup');
+  const n = NEXT_POPUP_N++;
+  const leader = document.createElement('i');
+  leader.className = 'popup-leader';
+  leader.setAttribute('data-n', String(n));
+  map.getContainer().appendChild(leader);
+  pop._orbit = { leader };
+  OPEN_POPUPS.add(pop);
+
+  const update = () => updatePopupLeader(pop);
+  map.on('move', update);
+  pop.on('close', () => {
+    map.off('move', update); OPEN_POPUPS.delete(pop); leader.remove();
+  });
+
+  requestAnimationFrame(() => placePopup(pop));
+  const handle = el.querySelector('.pdrag') || el.querySelector('.maplibregl-popup-content');
+  if (!handle) return;
+  handle.setAttribute('data-n', String(n));
+  // Free drag: the bubble follows the pointer 1:1 anywhere on screen, not just around a
+  // fixed-radius circle. The leader line still connects it back to its map point.
+  let on = false, startX = 0, startY = 0, baseDx = 0, baseDy = 0;
+  handle.addEventListener('pointerdown', e => {
+    if (e.target.closest('a,button,select,input,.lvlbtn,.skymini')) return;
+    startX = e.clientX; startY = e.clientY;
+    baseDx = pop._orbit.dx || 0; baseDy = pop._orbit.dy || 0;
+    on = true; handle.setPointerCapture(e.pointerId);
+    e.preventDefault(); e.stopPropagation();
+  });
+  handle.addEventListener('pointermove', e => {
+    if (!on) return;
+    setPopupOffset(pop, baseDx + (e.clientX - startX), baseDy + (e.clientY - startY));
+  });
+  const stop = e => { if (on) { on=false; handle.releasePointerCapture(e.pointerId); } };
+  handle.addEventListener('pointerup', stop);
+  handle.addEventListener('pointercancel', stop);
+}
+
+/* Shared point inspection path for clicks, search, and saved markers. */
+async function inspect(lat, lng, title) {
+  const d = await probe(lat, lng);
+  const s = sunAt(lat, lng);
+  const head = title ? `<div class="ttl">${esc(title)}</div>` : '';
+  const r = (k, val) => `<div><span class="pk">${k}</span><span class="pv">${val}</span></div>`;
+
+  const linkRow = (alt) =>
+    `<div class="btns">` +
+    `<a href="${gmaps(lat,lng)}" target="_blank" rel="noopener">Maps</a>` +
+    `<a href="${gsv(lat,lng,alt)}" target="_blank" rel="noopener">Street View ☀</a>` +
+    `<a href="${peakf(lat,lng,alt)}" target="_blank" rel="noopener">PeakFinder ☀</a>` +
+    `<a href="${osmap(lat,lng)}" target="_blank" rel="noopener">OSM</a></div>`;
+  const markRow =
+    `<div class="btns"><button class="go" onclick="mkAdd(${lat},${lng})">Save marker</button></div>`;
+
+  // Keep multiple point comparisons open.
+  const pop = new maplibregl.Popup({ maxWidth:'570px', closeOnClick:false, anchor:'center' })
+    .setLngLat([lng, lat]);
+  if (!d) {
+    pop.setHTML(`<div class="pop" data-lvl="3"><div class="ttl pdrag">` +
+                `${lat.toFixed(5)}, ${lng.toFixed(5)}</div>` +
+                `<div class="pop-coords">` +
+                  r('maximum eclipse', `${s.at(s.ut)} ${s.tag}`) +
+                  `<div class="pk" style="margin:2px 0 5px"><i>outside the computed area</i></div>` +
+                `</div><div class="pop-visual">${markRow}${linkRow(NaN)}</div></div>`).addTo(map);
+    makeOrbital(pop);
+    return;
+  }
+
+  let cls, txt;
+  if (!(d.dur > 0))                     { cls='bad';  txt='OUTSIDE TOTALITY'; }
+  else if (d.f <= 0.001)                { cls='bad';  txt='BLOCKED BY TERRAIN'; }
+  else if (d.f < 0.999 || d.clear < 1)  { cls='marg'; txt='MARGINAL'; }
+  else                                  { cls='ok';   txt='TOTALITY VISIBLE'; }
+
+  // Reconstruct C2/C3 symmetrically around maximum eclipse, rounded to one second.
+  const half = d.dur > 0 ? Math.round(d.dur / 2) : 0;
+  const win = d.dur > 0 ? `${s.at(s.ut - half)} → ${s.at(s.ut + half)}` : '—';
+
+  let relBlock = '';
+  if (ref && !(ref.lat === lat && ref.lng === lng)) {
+    const dl = (x, u, dec=2) => { const g = x>=0?'+':''; const c = x>=0?'up':'dn';
+      return `<span class="${c}">${g}${x.toFixed(dec)}${u}</span>`; };
+    const lightRatio = Math.exp(-P.tau*d.X) / Math.exp(-P.tau*ref.X);
+    relBlock = `<div class="rel"><b>vs reference #${refIdx+1}</b>` +
+      r('totality', dl(d.dur - ref.dur, ' s', 0)) +
+      r('atmospheric transmission', `<span class="${lightRatio>=1?'up':'dn'}">${lightRatio.toFixed(2)}×</span>`) +
+      r('clearance', dl(d.clear - ref.clear, '°')) +
+      r('EVI', dl(d.evi - ref.evi, '', 3)) + `</div>`;
+  }
+
+  /* GenCat is binary; EVI is continuous. Compare visibility classes, not score values. */
+  let refRow = '';
+  if (d.ieec !== null) {
+    const gencat = d.ieec === 1, modelVisible = d.f > 0.001;
+    refRow = r('GenCat map',
+      `<span class="${gencat ? 'up' : 'dn'}">${gencat ? 'visible' : 'blocked'}</span>` +
+      (gencat === modelVisible ? '' : ' <span style="color:#ffd23f">different result</span>'));
+  }
+
+  const lvlBtn = `<span class="lvlbtn" onclick="cycleLvl(this)" title="Detail level">··</span>`;
+  pop.setHTML(
+    `<div class="pop" data-lvl="2">` +
+    head +
+    `<div class="verdict ${cls} pdrag">${lvlBtn}${txt}</div>` +
+    `<div class="pop-row">` +
+      `<div class="pop-coords">` +
+        r('coordinates', `${lat.toFixed(5)}, ${lng.toFixed(5)}`) +
+        r('maximum eclipse', `${s.at(s.ut)} ${s.tag}`) +
+        `<div class="pop-visual">${cartoonBlock(d, lat, lng)}${markRow}</div>` +
+      `</div>` +
+      `<div class="pop-primary" data-min="2">` +
+        r('duration', d.dur>0 ? `${d.dur.toFixed(0)} s` : '—') +
+        r('Sun position', `az ${s.az.toFixed(1)}° · alt ${d.alt.toFixed(2)}°`) +
+        r('clearance', `${d.clear>=0?'+':''}${d.clear.toFixed(2)}°`) +
+        r('EVI', d.evi.toFixed(3)) +
+        linkRow(d.alt) +
+      `</div>` +
+    `</div>` +
+    `<div class="pop-detail" data-min="3">` +
+      r('elevation', isFinite(d.elev) ? `${d.elev.toFixed(0)} m` : '—') +
+      r('totality window', win) +
+      r('terrain horizon', `${d.hor>=0?'+':''}${d.hor.toFixed(2)}°`) +
+      r('limiting terrain', `${d.occ.toFixed(1)} km away`) +
+      r('airmass', d.X.toFixed(1)) +
+      r('visible fraction', `${(d.f*100).toFixed(0)} %`) +
+      refRow + relBlock +
+    `</div></div>`
+  ).addTo(map);
+  makeOrbital(pop);
+}
+
+/* Submit-only Nominatim search; coordinate parsing remains local. */
+const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
+const AOI_VIEWBOX = '-2.60,42.20,2.20,39.10';   // bias results to the AOI; not a hard bound
+
+/* Accepts: "40.2275, -1.5521" · "40.2275 -1.5521" · a Google Maps URL (…/@40.22,-1.55,15z or ?q=lat,lng)
+   · an OSM permalink (?mlat=…&mlon=…) · DMS ("40°13'39\"N 1°33'07\"W"). */
+function parseCoords(s) {
+  s = s.trim();
+  let m;
+  if ((m = s.match(/mlat=(-?\d+(?:\.\d+)?)[\s\S]*?mlon=(-?\d+(?:\.\d+)?)/i)))
+    return clampLL(+m[1], +m[2]);
+  if ((m = s.match(/^(-?\d{1,2}(?:\.\d+)?)\s*[,; ]\s*(-?\d{1,3}(?:\.\d+)?)$/)))
+    return clampLL(+m[1], +m[2]);
+  if ((m = s.match(/[@=\/](-?\d{1,2}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)/)))   // URLs
+    return clampLL(+m[1], +m[2]);
+  const dms = [...s.matchAll(/(\d+(?:\.\d+)?)\s*[°d]\s*(?:(\d+(?:\.\d+)?)\s*['′m]\s*)?(?:(\d+(?:\.\d+)?)\s*["″s]?\s*)?([NSEW])/gi)];
+  if (dms.length === 2) {
+    const dec = g => (+g[1] + (+g[2] || 0)/60 + (+g[3] || 0)/3600) * (/[SW]/i.test(g[4]) ? -1 : 1);
+    const [a, b] = dms.map(dec);
+    return /[NS]/i.test(dms[0][4]) ? clampLL(a, b) : clampLL(b, a);
+  }
+  return null;
+}
+const clampLL = (lat, lng) =>
+  (isFinite(lat) && isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) ? [lat, lng] : null;
+
+const qres = () => document.getElementById('qres');
+function showRes(html) { const r = qres(); r.innerHTML = html; r.style.display = html ? 'block' : 'none'; }
+const hideRes = () => showRes('');
+
+/* Display and inspect a selected search result. */
+async function goTo(lat, lng, title) {
+  hideRes();
+  const src = map.getSource('q-src');
+  if (src) src.setData({ type:'FeatureCollection', features:[
+    { type:'Feature', properties:{}, geometry:{ type:'Point', coordinates:[lng, lat] } }]});
+  map.flyTo({ center:[lng, lat], zoom: Math.max(map.getZoom(), 12), speed:1.4 });
+  map.once('moveend', () => inspect(lat, lng, title));
+}
+
+async function runSearch() {
+  const q = document.getElementById('q').value.trim();
+  if (!q) return hideRes();
+
+  const c = parseCoords(q);
+  if (c) return goTo(c[0], c[1], `${c[0].toFixed(5)}, ${c[1].toFixed(5)}`);
+
+  showRes('<div class="msg">searching…</div>');
+  let hits;
+  try {
+    const u = `${NOMINATIM}?format=jsonv2&limit=6&addressdetails=0&viewbox=${AOI_VIEWBOX}&q=${encodeURIComponent(q)}`;
+    const res = await fetch(u, { headers:{ Accept:'application/json' } });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    hits = await res.json();
+  } catch (err) {
+    return showRes(`<div class="msg">Search unavailable (${esc(err.message)}). Enter coordinates instead.</div>`);
+  }
+  if (!hits.length) return showRes('<div class="msg">No results.</div>');
+
+  showRes(hits.map((h, i) => {
+    const name = h.display_name || h.name || '';
+    const short = name.split(',').slice(0, 2).join(',');
+    return `<div data-i="${i}"><div class="t">${esc(short)}</div><div class="s">` +
+           `${(+h.lat).toFixed(4)}, ${(+h.lon).toFixed(4)} · ${esc(h.type || '')}</div></div>`;
+  }).join(''));
+  qres().querySelectorAll('div[data-i]').forEach(row => row.addEventListener('click', () => {
+    const h = hits[+row.getAttribute('data-i')];
+    goTo(+h.lat, +h.lon, (h.display_name || '').split(',').slice(0, 2).join(','));
+  }));
+}
+
+document.getElementById('qgo').addEventListener('click', runSearch);
+document.getElementById('q').addEventListener('keydown', e => {
+  if (e.key === 'Enter') runSearch();
+  else if (e.key === 'Escape') { hideRes(); e.target.blur(); }
+});
+map.on('click', hideRes);
+
+/* Marker pointer state. */
+map.on('mouseenter','mark-pts',()=>map.getCanvas().style.cursor='pointer');
+map.on('mouseleave','mark-pts',()=>map.getCanvas().style.cursor='');
+
+/* Model and display controls. */
+const bind = (id,key,dec) => { const el=document.getElementById(id), out=document.getElementById('v'+id);
+  const upd=()=>{ P[key]=+el.value; out.textContent=(+el.value).toFixed(dec); repaint(); };
+  el.addEventListener('input',upd); P[key]=+el.value; out.textContent=(+el.value).toFixed(dec); };
+bind('thr','thr',2); bind('soft','soft',2); bind('tau','tau',2);
+
+document.getElementById('op').addEventListener('input', e => { P.op=+e.target.value;
+  document.getElementById('vop').textContent=P.op.toFixed(2);
+  for (let i = 0; map.getLayer('cog-'+i); i++)
+    map.setPaintProperty('cog-'+i, 'raster-opacity', P.op); });
+document.getElementById('vop').textContent = P.op.toFixed(2);
+document.getElementById('layer').addEventListener('change', e => { P.layer=e.target.value; repaint(); });
+document.getElementById('cmap').addEventListener('change', e => { P.cmap=e.target.value; repaint(); });
+document.getElementById('crev').addEventListener('change', e => { P.crev=e.target.checked; repaint(); });
+
+/* Hillshade, contours, and 3D share the raster DEM source. */
+document.getElementById('hx').addEventListener('input', e => { P.hx=+e.target.value;
+  document.getElementById('vhx').textContent = P.hx.toFixed(2);
+  if (map.getLayer('hillshade')) map.setPaintProperty('hillshade','hillshade-exaggeration',P.hx); });
+document.getElementById('vhx').textContent = P.hx.toFixed(2);
+document.getElementById('ctr').addEventListener('change',  e => { P.ctr=e.target.value; setContours(); });
+document.getElementById('ctri').addEventListener('change', e => { P.ctri=+e.target.value; setContours(); });
+document.getElementById('ctro').addEventListener('input',  e => { P.ctro=+e.target.value; setContours(); });
+document.getElementById('vctro').textContent = P.ctro.toFixed(2);
+document.getElementById('t3x').addEventListener('input', e => { P.t3x=+e.target.value;
+  document.getElementById('v3x').textContent = P.t3x.toFixed(1);
+  if (document.getElementById('t3d').checked)
+    map.setTerrain({ source:'demsrc', exaggeration:P.t3x }); });
+document.getElementById('v3x').textContent = P.t3x.toFixed(1);
+
+/* Marker controls. */
+document.getElementById('mkshare').addEventListener('click', mkShare);
+document.getElementById('mkload').addEventListener('click', mkLoad);
+
+/* Display time zone; CEST is UTC+2 on the eclipse date. */
+document.getElementById('tz').addEventListener('change', e => { P.tz = e.target.value; });
+
+/* Control-panel visibility. */
+document.getElementById('fold').addEventListener('click', () => {
+  const p = document.getElementById('panel');
+  const folded = p.classList.toggle('folded');
+  const b = document.getElementById('fold');
+  b.textContent = folded ? '+' : '−';
+  b.title = folded ? 'Expand controls' : 'Collapse controls';
+  b.setAttribute('aria-label', b.title);
+  b.setAttribute('aria-expanded', String(!folded));
+  setTimeout(() => OPEN_POPUPS.forEach(placePopup), 200);
+});
+window.addEventListener('resize', () => OPEN_POPUPS.forEach(placePopup));
+
+/* Only the selected basemap remains visible and fetches tiles. */
+function setBase() {
+  BASEMAPS.forEach(id => map.getLayer(id) &&
+    map.setLayoutProperty(id, 'visibility', id === P.base ? 'visible' : 'none'));
+}
+function setBaseOpacity() {
+  BASEMAPS.forEach(id => map.getLayer(id) && map.setPaintProperty(id, 'raster-opacity', P.bop));
+  document.getElementById('vbop').textContent = P.bop.toFixed(2);
+}
+document.getElementById('base').addEventListener('change', e => { P.base = e.target.value; setBase(); });
+document.getElementById('bop').addEventListener('input', e => { P.bop = +e.target.value; setBaseOpacity(); });
+setBaseOpacity();
+document.getElementById('scFixed').addEventListener('change', ()=>{ P.stretch=false; repaint(); });
+document.getElementById('scStretch').addEventListener('change', ()=>{ P.stretch=true; repaint(); });
+
+const vis = (ids,on) => ids.forEach(i => map.getLayer(i) &&
+  map.setLayoutProperty(i,'visibility', on ? 'visible' : 'none'));
+document.getElementById('hs').addEventListener('change',   e => vis(['hillshade'], e.target.checked));
+document.getElementById('lbl').addEventListener('change',  e => vis(['labels'], e.target.checked));
+document.getElementById('ieec').addEventListener('change', e => vis(['ieec-lyr'], e.target.checked));
+document.getElementById('obs').addEventListener('change',  e => vis(['obs-pts','obs-lbl'], e.target.checked));
+document.getElementById('path').addEventListener('change', e => vis(['limits','centreline'], e.target.checked));
+document.getElementById('durc').addEventListener('change', e => vis(['dur-contours','dur-labels'], e.target.checked));
+// Orient 3D toward the mean solar azimuth used by the terrain rays.
+document.getElementById('t3d').addEventListener('change', e => {
+  map.setTerrain(e.target.checked ? { source:'demsrc', exaggeration:P.t3x } : null);
+  if (e.target.checked && map.getPitch() < 45)
+    map.easeTo({ pitch:72, bearing:SUN_AZ_MID });      // WNW up = you are facing the sun
+});
+document.getElementById('reset').addEventListener('click', () => { map.setTerrain(null);
+  document.getElementById('t3d').checked=false; map.easeTo(HOME); });
+
+/* User-facing definitions for controls and overlays. */
+const TIPS = {
+  layer:
+    '<b>The selected quantity encoded by colour.</b> The raster stores terrain-horizon angle, ' +
+    'solar altitude and motion, totality duration, and limiting-terrain distance. The browser ' +
+    'derives EVI, visible fraction, clearance, and reference ratios from those fields. Select ' +
+    'an ingredient layer to inspect it independently of the composite score.',
+  scale:
+    '<b>Fixed</b> uses whole-area percentiles, so the same colour represents the same value ' +
+    'everywhere. <b>Stretch</b> uses the 2nd and 98th percentiles of the current view. It reveals ' +
+    'local variation, but colours from different views are not directly comparable.',
+  knobs:
+    '<b>EVI = f<sub>vis</sub> × √(D/120 s) × exp(−τX) × Q<sub>margin</sub>.</b> The score combines ' +
+    'visible totality, duration, atmospheric transmission, and terrain clearance. These controls ' +
+    'change the browser-side calculation; they do not alter the source raster.',
+  thr:
+    '<b>Minimum separation between the Sun\'s centre and the modelled terrain horizon.</b> ' +
+    'At <code>0°</code>, the centre only has to clear the horizon; <code>0.27°</code> places the ' +
+    'full disc above it; <code>3°</code> demands substantial open sky. This is the strongest ' +
+    'terrain control because increasing it can change a pixel from visible to blocked.',
+  soft:
+    '<b>Clearance at which Q<sub>margin</sub> reaches 1.</b> Between zero and this value, the ' +
+    'margin factor increases linearly. At <code>0.25°</code>, most visible sites receive little ' +
+    'margin penalty; at <code>5°</code>, sites close to the horizon are penalised strongly. It ' +
+    'changes ranking, not the visible/blocked test.',
+  tau:
+    '<b>Strength of the atmospheric factor exp(−τX).</b> At <code>0</code>, altitude has no ' +
+    'atmospheric effect on EVI; at <code>0.6</code>, low-Sun sites are penalised much more strongly. ' +
+    'It can materially reorder visible sites, but it does not model clouds or measured haze.',
+  basemap:
+    '<b>Geographic context beneath the model field.</b> OpenStreetMap provides the general map; ' +
+    'PNOA and MTN provide Spanish orthophoto and topographic layers from IGN. Reduce model ' +
+    'opacity to inspect roads, land cover, and relief without hiding the calculated field.',
+  labels:
+    'Draws roads and place names above the model field. Disable it when labels obscure fine ' +
+    'spatial structure.',
+  palette:
+    '<b>Mapping from numeric value to colour.</b> Diverging palettes identify a meaningful pivot, ' +
+    'such as 0° clearance or a 1× reference ratio. Sequential palettes encode increasing ' +
+    'magnitude. Automatic mode selects the default for the current field.',
+  terrain:
+    '<b>Views derived from the same elevation model used for map relief.</b> Hillshade shows ' +
+    'surface form; elevation lines and stepped bands show height intervals; 3D displaces the ' +
+    'map surface. The stepped bands are raster intervals, not surveyed vector contours.',
+  marks:
+    '<b>Saved inspection points.</b> Set one marker as the reference to show popup differences ' +
+    'and enable the map-wide EVI ratio. Marker coordinates and the selected reference are stored ' +
+    'in the share URL.',
+  tz:
+    '<b>Time labels in popups and the eclipse sequence.</b> CEST is UTC+2 on 12 August 2026 ' +
+    'and is the default local display. Select UTC when comparing the values with ephemerides ' +
+    'or other astronomical software.',
+  ieec:
+    '<b>Independent GenCat binary visibility map for Catalonia.</b> Green denotes visible and ' +
+    'red denotes blocked in that dataset. It is not an EVI layer; the popup compares its binary ' +
+    'class with whether this model gives a non-zero visible fraction.',
+  blocked:
+    'The Sun does not meet the required clearance above the modelled terrain horizon. These ' +
+    'pixels are shown as a separate class and excluded from the EVI colour domain.',
+  nopath:
+    'Outside the calculated path of totality, where C2–C3 duration is zero. A partial eclipse ' +
+    'still occurs, but this map evaluates totality only.',
+};
+
+const tipEl = document.getElementById('tip');
+let tipFor = null;
+function showTip(el) {
+  const t = TIPS[el.getAttribute('data-tip')];
+  if (!t) return;
+  tipEl.innerHTML = t + '<span class="more">See Model and data pipeline for equations and assumptions.</span>';
+  tipEl.style.display = 'block';
+  const r = el.getBoundingClientRect();
+  const W = window.innerWidth || 1200, H = window.innerHeight || 800;
+  let left = r.right + 10;
+  if (left + tipEl.offsetWidth > W - 8) left = Math.max(8, r.left - tipEl.offsetWidth - 10);
+  let top = Math.max(8, r.top - 4);
+  if (top + tipEl.offsetHeight > H - 8) top = Math.max(8, H - tipEl.offsetHeight - 8);
+  tipEl.style.left = left + 'px';
+  tipEl.style.top = top + 'px';
+  tipFor = el;
+}
+const hideTip = () => { tipEl.style.display = 'none'; tipFor = null; };
+// Pointer hover and touch/click share the same tooltip content.
+document.querySelectorAll('[data-tip]').forEach(el => {
+  el.addEventListener('mouseenter', () => showTip(el));
+  el.addEventListener('mouseleave', hideTip);
+  el.addEventListener('click', e => { e.stopPropagation(); (tipFor === el) ? hideTip() : showTip(el); });
+});
+document.addEventListener('click', hideTip);
+</script>
+</body>
+</html>
